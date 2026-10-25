@@ -295,9 +295,9 @@ public partial class Main : Node3D
         // from every rendered terrain face. The height samples use the same grid as the mesh.
         var heightMap = new HeightMapShape3D
         {
-            MapWidth = ChunkSize,
-            MapDepth = ChunkSize,
-            MapData = CreateHeightMapData(heights)
+            MapWidth = ChunkSize + 1,
+            MapDepth = ChunkSize + 1,
+            MapData = CreateHeightMapData(coordinate)
         };
         var collision = new StaticBody3D { Name = "TerrainCollision" };
         collision.AddChild(new CollisionShape3D
@@ -311,12 +311,15 @@ public partial class Main : Node3D
         return chunk;
     }
 
-    private float[] CreateHeightMapData(int[,] heights)
+    private float[] CreateHeightMapData(Vector2I coordinate)
     {
-        var data = new float[ChunkSize * ChunkSize];
-        for (int z = 0; z < ChunkSize; z++)
-        for (int x = 0; x < ChunkSize; x++)
-            data[z * ChunkSize + x] = heights[x, z];
+        int sampleCount = ChunkSize + 1;
+        var data = new float[sampleCount * sampleCount];
+        for (int z = 0; z < sampleCount; z++)
+        for (int x = 0; x < sampleCount; x++)
+            data[z * sampleCount + x] = GetHeight(
+                coordinate.X * ChunkSize + x,
+                coordinate.Y * ChunkSize + z);
         return data;
     }
 
