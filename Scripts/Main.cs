@@ -117,11 +117,11 @@ public partial class Main : Node3D
     private void CreateLighting()
     {
         var worldEnvironment = new WorldEnvironment();
-        var environment = new Environment
+        var environment = new Godot.Environment
         {
-            BackgroundMode = Environment.BGMode.Color,
+            BackgroundMode = Godot.Environment.BGMode.Color,
             BackgroundColor = new Color(0.48f, 0.66f, 0.78f),
-            AmbientLightSource = Environment.AmbientSource.Color,
+            AmbientLightSource = Godot.Environment.AmbientSource.Color,
             AmbientLightColor = new Color(0.72f, 0.77f, 0.82f),
             AmbientLightEnergy = 0.7f
         };
