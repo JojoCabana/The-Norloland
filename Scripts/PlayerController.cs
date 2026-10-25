@@ -53,7 +53,7 @@ public partial class PlayerController : CharacterBody3D
         }
 
         if (@event is InputEventKey key && key.Pressed && !key.Echo &&
-            key.Keycode == Key.Escape)
+            (key.Keycode == Key.Escape || key.PhysicalKeycode == Key.Escape))
         {
             Input.MouseMode = Input.MouseModeEnum.Visible;
         }
