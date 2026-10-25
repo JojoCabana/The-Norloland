@@ -25,8 +25,8 @@ public partial class Main : Node3D
     private Label _viewDistanceLabel = null!;
     private Vector2I _lastCenter = new(int.MinValue, int.MinValue);
     private StandardMaterial3D _terrainMaterial = null!;
-    private StandardMaterial3D _trunkMaterial = null!;
-    private StandardMaterial3D _leavesMaterial = null!;
+    private StandardMaterial3D[] _trunkMaterials = null!;
+    private StandardMaterial3D[] _leavesMaterials = null!;
 
     public override void _Ready()
     {
@@ -86,16 +86,19 @@ public partial class Main : Node3D
         };
         _terrainMaterial.AlbedoTexture = CreateGroundTexture();
 
-        _trunkMaterial = new StandardMaterial3D
+        _trunkMaterials = new[]
         {
-            AlbedoColor = new Color(0.28f, 0.16f, 0.08f),
-            Roughness = 1.0f
+            CreateMaterial(new Color(0.28f, 0.16f, 0.08f)),
+            CreateMaterial(new Color(0.22f, 0.13f, 0.08f)),
+            CreateMaterial(new Color(0.72f, 0.68f, 0.55f)),
+            CreateMaterial(new Color(0.39f, 0.24f, 0.12f))
         };
-
-        _leavesMaterial = new StandardMaterial3D
+        _leavesMaterials = new[]
         {
-            AlbedoColor = new Color(0.15f, 0.30f, 0.12f),
-            Roughness = 1.0f
+            CreateMaterial(new Color(0.16f, 0.34f, 0.13f)),
+            CreateMaterial(new Color(0.10f, 0.25f, 0.12f)),
+            CreateMaterial(new Color(0.27f, 0.39f, 0.17f)),
+            CreateMaterial(new Color(0.34f, 0.39f, 0.15f))
         };
 
         CreateLighting();
@@ -147,7 +150,7 @@ public partial class Main : Node3D
         }
     }
 
-    public override void _UnhandledInput(InputEvent @event)
+    public override void _Input(InputEvent @event)
     {
         if (@event is InputEventKey key && key.Pressed && !key.Echo && key.Keycode == Key.F3)
         {
@@ -166,6 +169,11 @@ public partial class Main : Node3D
                 ShowPauseMenu();
             GetViewport().SetInputAsHandled();
         }
+    }
+
+    private static StandardMaterial3D CreateMaterial(Color color)
+    {
+        return new StandardMaterial3D { AlbedoColor = color, Roughness = 1.0f };
     }
 
     private static void AddInputAction(string action, Key key)
@@ -590,7 +598,10 @@ public partial class Main : Node3D
         grass *= 0.94f + _detailNoise.GetNoise2D(worldX, worldZ) * 0.08f;
         Color rock = new(0.38f, 0.37f, 0.34f);
         float rockAmount = Mathf.Clamp((slope - 1.4f) * 0.42f, 0.0f, 0.72f);
-        return grass.Lerp(rock, rockAmount);
+        Color terrain = grass.Lerp(rock, rockAmount);
+        Color snow = new(0.78f, 0.80f, 0.76f);
+        float snowAmount = Mathf.Clamp((heights[x, z] - 36.0f) * 0.38f, 0.0f, 0.72f);
+        return terrain.Lerp(snow, snowAmount);
     }
 
     private float GetHeight(int worldX, int worldZ)
@@ -603,27 +614,36 @@ public partial class Main : Node3D
     private Color GetGrassColor(int worldX, int worldZ)
     {
         float biome = _biomeNoise.GetNoise2D(worldX, worldZ);
-        if (biome < -0.25f)
-            return new Color(0.43f, 0.39f, 0.23f); // dry grass
-        if (biome > 0.35f)
-            return new Color(0.20f, 0.34f, 0.16f); // deep green
-        return new Color(0.29f, 0.43f, 0.20f);
+        if (biome < -0.42f)
+            return new Color(0.49f, 0.40f, 0.25f); // dry scrub
+        if (biome < -0.18f)
+            return new Color(0.43f, 0.42f, 0.24f); // steppe
+        if (biome > 0.48f)
+            return new Color(0.17f, 0.31f, 0.13f); // dense forest
+        if (biome > 0.24f)
+            return new Color(0.25f, 0.39f, 0.18f); // meadow
+        return new Color(0.31f, 0.44f, 0.21f); // grassland
     }
 
     private void AddTrees(Node3D chunk, Vector2I coordinate, float[,] heights)
     {
         int treeSeed = unchecked(WorldSeed ^ (coordinate.X * 73856093) ^ (coordinate.Y * 19349663));
         var random = new Random(treeSeed);
-        var trunkTransforms = new List<Transform3D>();
-        var leafTransforms = new List<Transform3D>();
+        var trunkTransforms = new List<Transform3D>[4];
+        var leafTransforms = new List<Transform3D>[4];
+        for (int type = 0; type < 4; type++)
+        {
+            trunkTransforms[type] = new List<Transform3D>();
+            leafTransforms[type] = new List<Transform3D>();
+        }
 
-        for (int attempt = 0; attempt < 18; attempt++)
+        for (int attempt = 0; attempt < 24; attempt++)
         {
             int x = random.Next(1, ChunkSize - 1);
             int z = random.Next(1, ChunkSize - 1);
             float h = (heights[x, z] + heights[x + 1, z] + heights[x, z + 1] + heights[x + 1, z + 1]) * 0.25f;
 
-            if (random.NextDouble() > 0.58)
+            if (random.NextDouble() > 0.48)
                 continue;
 
             if (Math.Abs(h - heights[x - 1, z]) > 1.5f ||
@@ -634,60 +654,136 @@ public partial class Main : Node3D
 
             float px = x + 0.5f;
             float pz = z + 0.5f;
-            trunkTransforms.Add(new Transform3D(Basis.Identity, new Vector3(px, h + 1.6f, pz)));
-            Vector3[] canopyOffsets =
-            {
-                new Vector3(0.0f, 4.0f, 0.0f),
-                new Vector3(0.42f, 3.45f, 0.08f),
-                new Vector3(-0.38f, 3.42f, 0.18f),
-                new Vector3(0.08f, 3.38f, -0.44f),
-                new Vector3(-0.1f, 3.28f, -0.28f)
-            };
-            for (int cluster = 0; cluster < canopyOffsets.Length; cluster++)
-            {
-                Vector3 offset = canopyOffsets[cluster];
-                float size = cluster == 0 ? 1.0f : 0.76f + (float)random.NextDouble() * 0.22f;
-                Vector3 scale = new(
-                    1.05f * size,
-                    (cluster == 0 ? 1.3f : 1.0f) * size,
-                    1.02f * size);
-                Basis leafBasis = Basis.FromScale(scale);
-                Vector3 jitter = new(
-                    ((float)random.NextDouble() - 0.5f) * 0.18f,
-                    ((float)random.NextDouble() - 0.5f) * 0.12f,
-                    ((float)random.NextDouble() - 0.5f) * 0.18f);
-                leafTransforms.Add(new Transform3D(leafBasis, new Vector3(px, h, pz) + offset + jitter));
-            }
+            float biome = _biomeNoise.GetNoise2D(coordinate.X * ChunkSize + x, coordinate.Y * ChunkSize + z);
+            int treeType = ChooseTreeType(biome, random);
+            float trunkHeight = treeType switch { 1 => 5.0f, 2 => 4.4f, 3 => 4.3f, _ => 3.4f };
+            trunkTransforms[treeType].Add(new Transform3D(
+                Basis.Identity,
+                new Vector3(px, h + trunkHeight * 0.5f, pz)));
+            AddTreeCanopy(leafTransforms[treeType], treeType, new Vector3(px, h, pz), random);
         }
 
-        if (trunkTransforms.Count == 0)
+        for (int type = 0; type < 4; type++)
+            AddTreeInstances(chunk, type, trunkTransforms[type], leafTransforms[type]);
+    }
+
+    private static int ChooseTreeType(float biome, Random random)
+    {
+        double variety = random.NextDouble();
+        if (biome < -0.25f)
+            return variety < 0.55 ? 3 : variety < 0.82 ? 0 : 1;
+        if (biome > 0.35f)
+            return random.Next(0, 3);
+        return random.Next(0, 4);
+    }
+
+    private static void AddTreeCanopy(List<Transform3D> transforms, int type, Vector3 origin, Random random)
+    {
+        Vector3[] offsets;
+        Vector3[] scales;
+        switch (type)
+        {
+            case 1: // layered pine
+                offsets = new[]
+                {
+                    new Vector3(0, 5.0f, 0),
+                    new Vector3(0.30f, 4.35f, 0), new Vector3(-0.28f, 4.30f, 0.12f),
+                    new Vector3(0, 3.72f, 0.34f), new Vector3(0, 3.70f, -0.32f),
+                    new Vector3(0.42f, 3.08f, 0), new Vector3(-0.40f, 3.05f, 0),
+                    new Vector3(0, 2.55f, 0)
+                };
+                scales = new[]
+                {
+                    new Vector3(0.48f, 0.80f, 0.48f),
+                    new Vector3(0.63f, 0.75f, 0.62f), new Vector3(0.66f, 0.73f, 0.63f),
+                    new Vector3(0.76f, 0.77f, 0.76f), new Vector3(0.74f, 0.75f, 0.72f),
+                    new Vector3(0.84f, 0.78f, 0.82f), new Vector3(0.82f, 0.76f, 0.84f),
+                    new Vector3(0.88f, 0.78f, 0.86f)
+                };
+                break;
+            case 2: // narrow birch crown
+                offsets = new[]
+                {
+                    new Vector3(0, 5.45f, 0), new Vector3(0.08f, 4.75f, 0),
+                    new Vector3(-0.08f, 4.05f, 0.05f), new Vector3(0, 3.42f, -0.04f)
+                };
+                scales = new[]
+                {
+                    new Vector3(0.68f, 0.98f, 0.68f), new Vector3(0.72f, 1.0f, 0.72f),
+                    new Vector3(0.78f, 0.98f, 0.76f), new Vector3(0.82f, 0.86f, 0.80f)
+                };
+                break;
+            case 3: // flat acacia canopy
+                offsets = new[]
+                {
+                    new Vector3(0, 4.15f, 0), new Vector3(0.68f, 4.05f, 0.10f),
+                    new Vector3(-0.65f, 4.10f, -0.12f), new Vector3(0.05f, 4.02f, 0.68f),
+                    new Vector3(-0.08f, 4.12f, -0.62f)
+                };
+                scales = new[]
+                {
+                    new Vector3(1.05f, 0.46f, 1.02f), new Vector3(0.80f, 0.48f, 0.78f),
+                    new Vector3(0.82f, 0.46f, 0.79f), new Vector3(0.78f, 0.45f, 0.82f),
+                    new Vector3(0.78f, 0.44f, 0.80f)
+                };
+                break;
+            default: // broad, irregular oak
+                offsets = new[]
+                {
+                    new Vector3(0, 4.0f, 0), new Vector3(0.48f, 3.55f, 0.10f),
+                    new Vector3(-0.44f, 3.45f, 0.24f), new Vector3(0.08f, 3.38f, -0.48f),
+                    new Vector3(-0.18f, 3.30f, -0.30f), new Vector3(0.18f, 4.02f, 0.50f)
+                };
+                scales = new[]
+                {
+                    new Vector3(1.0f, 1.25f, 1.0f), new Vector3(0.85f, 0.95f, 0.86f),
+                    new Vector3(0.87f, 0.91f, 0.88f), new Vector3(0.83f, 0.94f, 0.86f),
+                    new Vector3(0.92f, 0.90f, 0.90f), new Vector3(0.78f, 0.82f, 0.82f)
+                };
+                break;
+        }
+
+        for (int i = 0; i < offsets.Length; i++)
+        {
+            Vector3 scale = scales[i] * (0.88f + (float)random.NextDouble() * 0.24f);
+            Vector3 jitter = new(
+                ((float)random.NextDouble() - 0.5f) * 0.24f,
+                ((float)random.NextDouble() - 0.5f) * 0.16f,
+                ((float)random.NextDouble() - 0.5f) * 0.24f);
+            transforms.Add(new Transform3D(
+                Basis.FromScale(scale),
+                origin + offsets[i] + jitter));
+        }
+    }
+
+    private void AddTreeInstances(Node3D chunk, int type, List<Transform3D> trunks, List<Transform3D> leaves)
+    {
+        if (trunks.Count == 0)
             return;
 
+        float trunkHeight = type switch { 1 => 5.0f, 2 => 4.4f, 3 => 4.3f, _ => 3.4f };
         var trunkMesh = new CylinderMesh
         {
-            TopRadius = 0.13f,
-            BottomRadius = 0.20f,
-            Height = 3.2f,
-            RadialSegments = 6,
+            TopRadius = type == 2 ? 0.08f : type == 1 ? 0.11f : 0.15f,
+            BottomRadius = type == 2 ? 0.13f : type == 1 ? 0.17f : 0.22f,
+            Height = trunkHeight,
+            RadialSegments = 8,
             Rings = 1
         };
-
         var trunkMultiMesh = new MultiMesh
         {
             TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
             Mesh = trunkMesh,
-            InstanceCount = trunkTransforms.Count
+            InstanceCount = trunks.Count
         };
-        for (int i = 0; i < trunkTransforms.Count; i++)
-            trunkMultiMesh.SetInstanceTransform(i, trunkTransforms[i]);
-
-        var trunks = new MultiMeshInstance3D
+        for (int i = 0; i < trunks.Count; i++)
+            trunkMultiMesh.SetInstanceTransform(i, trunks[i]);
+        chunk.AddChild(new MultiMeshInstance3D
         {
-            Name = "TreeTrunks",
+            Name = $"TreeTrunks_{type}",
             Multimesh = trunkMultiMesh,
-            MaterialOverride = _trunkMaterial
-        };
-        chunk.AddChild(trunks);
+            MaterialOverride = _trunkMaterials[type]
+        });
 
         var leafMesh = new SphereMesh
         {
@@ -700,17 +796,15 @@ public partial class Main : Node3D
         {
             TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
             Mesh = leafMesh,
-            InstanceCount = leafTransforms.Count
+            InstanceCount = leaves.Count
         };
-        for (int i = 0; i < leafTransforms.Count; i++)
-            leafMultiMesh.SetInstanceTransform(i, leafTransforms[i]);
-
-        var leaves = new MultiMeshInstance3D
+        for (int i = 0; i < leaves.Count; i++)
+            leafMultiMesh.SetInstanceTransform(i, leaves[i]);
+        chunk.AddChild(new MultiMeshInstance3D
         {
-            Name = "TreeCanopies",
+            Name = $"TreeCanopies_{type}",
             Multimesh = leafMultiMesh,
-            MaterialOverride = _leavesMaterial
-        };
-        chunk.AddChild(leaves);
+            MaterialOverride = _leavesMaterials[type]
+        });
     }
 }
