@@ -33,6 +33,10 @@ jobs:
       - name: Build C# solution
         run: godot --headless --editor --path . --build-solutions --quit --verbose
 
+      - name: Print MSBuild diagnostics on failure
+        if: failure()
+        run: cat /home/runner/.local/share/godot/mono/build_logs/*_Debug/msbuild_log.txt
+
       - name: Export Windows build
         run: |
           mkdir -p build
