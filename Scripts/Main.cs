@@ -448,6 +448,8 @@ public partial class Main : Node3D
         {
             for (int z = 0; z < ChunkSize; z++)
             {
+                int worldX = coordinate.X * ChunkSize + x;
+                int worldZ = coordinate.Y * ChunkSize + z;
                 Vector3 p00 = new(x, heights[x, z], z);
                 Vector3 p01 = new(x, heights[x, z + 1], z + 1);
                 Vector3 p11 = new(x + 1, heights[x + 1, z + 1], z + 1);
@@ -510,7 +512,7 @@ public partial class Main : Node3D
 
     private static void AddTerrainVertex(SurfaceTool surface, Vector3 position, Color color, Vector2 uv)
     {
-        surface.SetUv(uv);
+        surface.SetUV(uv);
         surface.SetColor(color);
         surface.AddVertex(position);
     }
