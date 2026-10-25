@@ -12,6 +12,12 @@ public partial class Main : Node3D
     private readonly Dictionary<Vector2I, Node3D> _chunks = new();
     private readonly HashSet<Vector2I> _wantedChunks = new();
     private Queue<Vector2I> _pendingChunks = new();
+    private static readonly Color[] FlowerColors =
+    {
+        new Color(0.94f, 0.91f, 0.79f),
+        new Color(0.96f, 0.78f, 0.18f),
+        new Color(0.77f, 0.52f, 0.80f)
+    };
     private FastNoiseLite _terrainNoise = null!;
     private FastNoiseLite _detailNoise = null!;
     private FastNoiseLite _surfaceNoise = null!;
@@ -27,6 +33,14 @@ public partial class Main : Node3D
     private StandardMaterial3D _terrainMaterial = null!;
     private StandardMaterial3D[] _trunkMaterials = null!;
     private StandardMaterial3D[] _leavesMaterials = null!;
+    private StandardMaterial3D _grassMaterial = null!;
+    private StandardMaterial3D _shrubMaterial = null!;
+    private StandardMaterial3D _flowerStemMaterial = null!;
+    private StandardMaterial3D _flowerCenterMaterial = null!;
+    private StandardMaterial3D[] _flowerMaterials = null!;
+    private Mesh _grassMesh = null!;
+    private Mesh _flowerPetalMesh = null!;
+    private bool _escapeWasPressed;
 
     public override void _Ready()
     {
@@ -88,10 +102,10 @@ public partial class Main : Node3D
 
         _trunkMaterials = new[]
         {
-            CreateMaterial(new Color(0.28f, 0.16f, 0.08f)),
-            CreateMaterial(new Color(0.22f, 0.13f, 0.08f)),
-            CreateMaterial(new Color(0.72f, 0.68f, 0.55f)),
-            CreateMaterial(new Color(0.39f, 0.24f, 0.12f))
+            CreateMaterial(new Color(0.72f, 0.61f, 0.42f), CreateBarkTexture()),
+            CreateMaterial(new Color(0.52f, 0.39f, 0.25f), CreateBarkTexture()),
+            CreateMaterial(new Color(0.88f, 0.84f, 0.70f), CreateBarkTexture()),
+            CreateMaterial(new Color(0.76f, 0.58f, 0.34f), CreateBarkTexture())
         };
         _leavesMaterials = new[]
         {
@@ -100,6 +114,24 @@ public partial class Main : Node3D
             CreateMaterial(new Color(0.27f, 0.39f, 0.17f)),
             CreateMaterial(new Color(0.34f, 0.39f, 0.15f))
         };
+
+        _grassMaterial = CreateMaterial(new Color(0.45f, 0.60f, 0.27f));
+        _grassMaterial.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+        _grassMaterial.VertexColorUseAsAlbedo = true;
+        _shrubMaterial = CreateMaterial(new Color(0.20f, 0.34f, 0.13f));
+        _flowerStemMaterial = CreateMaterial(new Color(0.18f, 0.38f, 0.12f));
+        _flowerCenterMaterial = CreateMaterial(new Color(0.95f, 0.68f, 0.13f));
+        _flowerMaterials = new[]
+        {
+            CreateMaterial(FlowerColors[0]),
+            CreateMaterial(FlowerColors[1]),
+            CreateMaterial(FlowerColors[2])
+        };
+        _flowerMaterials[0].CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+        _flowerMaterials[1].CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+        _flowerMaterials[2].CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+        _grassMesh = CreateGrassMesh();
+        _flowerPetalMesh = CreateFlowerPetalMesh();
 
         CreateLighting();
         CreatePlayer();
@@ -112,6 +144,11 @@ public partial class Main : Node3D
     {
         if (_player == null)
             return;
+
+        bool escapePressed = Input.IsKeyPressed(Key.Escape);
+        if (escapePressed && !_escapeWasPressed)
+            TogglePauseMenu();
+        _escapeWasPressed = escapePressed;
 
         Vector2I center = GetPlayerChunk();
         if (center != _lastCenter)
@@ -134,7 +171,7 @@ public partial class Main : Node3D
         {
             _hud.Text = "THE NORLOLAND  |  Seed: " + WorldSeed +
                         "  |  Chunks: " + _chunks.Count +
-                        "  |  WASD move  |  Space jump  |  F3 debug  |  Esc release mouse";
+                        "  |  WASD bewegen  |  Space springen  |  F3 Debug  |  Esc Menü";
         }
 
         if (_debugHud != null && _debugHud.Visible)
@@ -159,21 +196,44 @@ public partial class Main : Node3D
             return;
         }
 
-        if (@event is InputEventKey escape && escape.Pressed && !escape.Echo && escape.Keycode == Key.Escape)
-        {
-            if (_settingsMenu.Visible)
-                ShowPauseMenu();
-            else if (_pauseMenu.Visible)
-                SetMenuOpen(false);
-            else
-                ShowPauseMenu();
-            GetViewport().SetInputAsHandled();
-        }
     }
 
-    private static StandardMaterial3D CreateMaterial(Color color)
+    private void TogglePauseMenu()
     {
-        return new StandardMaterial3D { AlbedoColor = color, Roughness = 1.0f };
+        if (_settingsMenu.Visible)
+            ShowPauseMenu();
+        else if (_pauseMenu.Visible)
+            SetMenuOpen(false);
+        else
+            ShowPauseMenu();
+    }
+
+    private static StandardMaterial3D CreateMaterial(Color color, Texture2D? texture = null)
+    {
+        return new StandardMaterial3D
+        {
+            AlbedoColor = color,
+            AlbedoTexture = texture,
+            Roughness = 1.0f
+        };
+    }
+
+    private ImageTexture CreateBarkTexture()
+    {
+        const int width = 64;
+        const int height = 128;
+        var random = new Random(WorldSeed ^ 0x4b41524b);
+        var image = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+        {
+            float wave = Mathf.Sin((x + Mathf.Sin(y * 0.09f) * 3.0f) * 0.52f) * 0.10f;
+            float streak = (float)random.NextDouble() * 0.10f;
+            float value = Mathf.Clamp(0.72f + wave + streak, 0.42f, 1.0f);
+            image.SetPixel(x, y, new Color(value, value, value, 1.0f));
+        }
+        var texture = ImageTexture.CreateFromImage(image);
+        return texture;
     }
 
     private static void AddInputAction(string action, Key key)
@@ -505,6 +565,9 @@ public partial class Main : Node3D
         chunk.AddChild(collision);
 
         AddTrees(chunk, coordinate, heights);
+        AddGrass(chunk, coordinate, heights);
+        AddFlowers(chunk, coordinate, heights);
+        AddShrubs(chunk, coordinate, heights);
         return chunk;
     }
 
@@ -654,8 +717,10 @@ public partial class Main : Node3D
 
             float px = x + 0.5f;
             float pz = z + 0.5f;
-            float biome = _biomeNoise.GetNoise2D(coordinate.X * ChunkSize + x, coordinate.Y * ChunkSize + z);
-            int treeType = ChooseTreeType(biome, random);
+            int worldX = coordinate.X * ChunkSize + x;
+            int worldZ = coordinate.Y * ChunkSize + z;
+            float biome = _biomeNoise.GetNoise2D(worldX, worldZ);
+            int treeType = ChooseTreeType(biome, worldX, worldZ, random);
             float trunkHeight = treeType switch { 1 => 5.0f, 2 => 4.4f, 3 => 4.3f, _ => 3.4f };
             trunkTransforms[treeType].Add(new Transform3D(
                 Basis.Identity,
@@ -667,14 +732,179 @@ public partial class Main : Node3D
             AddTreeInstances(chunk, type, trunkTransforms[type], leafTransforms[type]);
     }
 
-    private static int ChooseTreeType(float biome, Random random)
+    private int ChooseTreeType(float biome, int worldX, int worldZ, Random random)
     {
-        double variety = random.NextDouble();
+        // The low-frequency field creates broad, coherent woodland patches.
+        float patch = _detailNoise.GetNoise2D(worldX * 0.18f, worldZ * 0.18f);
+        double roll = random.NextDouble();
+        int dominant;
+        int accent;
         if (biome < -0.25f)
-            return variety < 0.55 ? 3 : variety < 0.82 ? 0 : 1;
-        if (biome > 0.35f)
-            return random.Next(0, 3);
-        return random.Next(0, 4);
+        {
+            dominant = 3; accent = 0;
+        }
+        else if (biome > 0.30f)
+        {
+            dominant = patch > 0.05f ? 1 : 2; accent = dominant == 1 ? 2 : 1;
+        }
+        else
+        {
+            dominant = patch > 0.18f ? 0 : 1; accent = dominant == 0 ? 1 : 0;
+        }
+
+        return roll < 0.88 ? dominant : roll < 0.97 ? accent : (dominant + 1 + random.Next(0, 3)) % 4;
+    }
+
+    private static float SampleTerrainHeight(float[,] heights, float x, float z)
+    {
+        int ix = Mathf.Clamp(Mathf.FloorToInt(x), 0, heights.GetLength(0) - 2);
+        int iz = Mathf.Clamp(Mathf.FloorToInt(z), 0, heights.GetLength(1) - 2);
+        float tx = Mathf.Clamp(x - ix, 0.0f, 1.0f);
+        float tz = Mathf.Clamp(z - iz, 0.0f, 1.0f);
+        float p00 = heights[ix, iz];
+        float p01 = heights[ix, iz + 1];
+        float p11 = heights[ix + 1, iz + 1];
+        float p10 = heights[ix + 1, iz];
+        return tz >= tx
+            ? p00 * (1.0f - tz) + p01 * (tz - tx) + p11 * tx
+            : p00 * (1.0f - tx) + p11 * tz + p10 * (tx - tz);
+    }
+
+    private static bool IsPlantable(float[,] heights, int x, int z)
+    {
+        float h = heights[x, z];
+        return h < 36.0f &&
+            Mathf.Abs(h - heights[x - 1, z]) < 1.1f &&
+            Mathf.Abs(h - heights[x + 1, z]) < 1.1f &&
+            Mathf.Abs(h - heights[x, z - 1]) < 1.1f &&
+            Mathf.Abs(h - heights[x, z + 1]) < 1.1f;
+    }
+
+    private void AddGrass(Node3D chunk, Vector2I coordinate, float[,] heights)
+    {
+        var random = new Random(unchecked(WorldSeed ^ coordinate.X * 83492791 ^ coordinate.Y * 297121507));
+        float biome = _biomeNoise.GetNoise2D(coordinate.X * ChunkSize + ChunkSize / 2, coordinate.Y * ChunkSize + ChunkSize / 2);
+        int desired = biome < -0.35f ? 30 : biome > 0.25f ? 90 : 65;
+        var transforms = new List<Transform3D>(desired);
+        var colors = new List<Color>(desired);
+        for (int i = 0; i < desired * 2 && transforms.Count < desired; i++)
+        {
+            int x = random.Next(1, ChunkSize - 1);
+            int z = random.Next(1, ChunkSize - 1);
+            if (!IsPlantable(heights, x, z)) continue;
+            float px = x + (float)random.NextDouble();
+            float pz = z + (float)random.NextDouble();
+            float y = SampleTerrainHeight(heights, px, pz) + 0.015f;
+            float scale = 0.55f + (float)random.NextDouble() * 0.75f;
+            float angle = (float)random.NextDouble() * Mathf.Tau;
+            transforms.Add(new Transform3D(Basis.FromEuler(new Vector3(0, angle, 0)).Scaled(new Vector3(scale, scale, scale)), new Vector3(px, y, pz)));
+            colors.Add(new Color(0.78f + (float)random.NextDouble() * 0.4f, 0.82f + (float)random.NextDouble() * 0.3f, 0.72f + (float)random.NextDouble() * 0.35f));
+        }
+        AddColoredMultiMesh(chunk, "Grass", _grassMesh, _grassMaterial, transforms, colors);
+    }
+
+    private void AddFlowers(Node3D chunk, Vector2I coordinate, float[,] heights)
+    {
+        var random = new Random(unchecked(WorldSeed ^ coordinate.X * 1640531535 ^ coordinate.Y * 265443576));
+        float biome = _biomeNoise.GetNoise2D(coordinate.X * ChunkSize + ChunkSize / 2, coordinate.Y * ChunkSize + ChunkSize / 2);
+        int desired = biome < -0.35f ? 2 : 10;
+        var stems = new List<Transform3D>();
+        var petals = new List<Transform3D>[] { new(), new(), new() };
+        var centers = new List<Transform3D>();
+        for (int i = 0; i < desired * 4 && stems.Count < desired; i++)
+        {
+            int x = random.Next(1, ChunkSize - 1);
+            int z = random.Next(1, ChunkSize - 1);
+            if (!IsPlantable(heights, x, z) || random.NextDouble() < 0.45) continue;
+            float px = x + (float)random.NextDouble();
+            float pz = z + (float)random.NextDouble();
+            float y = SampleTerrainHeight(heights, px, pz);
+            float height = 0.32f + (float)random.NextDouble() * 0.30f;
+            stems.Add(new Transform3D(Basis.FromScale(new Vector3(0.035f, height, 0.035f)), new Vector3(px, y + height * 0.5f, pz)));
+            int color = random.Next(0, petals.Length);
+            float size = 0.10f + (float)random.NextDouble() * 0.07f;
+            petals[color].Add(new Transform3D(Basis.FromScale(new Vector3(size, size, size)), new Vector3(px, y + height, pz)));
+            centers.Add(new Transform3D(Basis.FromScale(new Vector3(size * 0.36f, size * 0.36f, size * 0.36f)), new Vector3(px, y + height + 0.015f, pz)));
+        }
+        AddMultiMesh(chunk, "FlowerStems", new CylinderMesh { TopRadius = 0.5f, BottomRadius = 0.5f, Height = 1.0f, RadialSegments = 5 }, _flowerStemMaterial, stems);
+        for (int c = 0; c < petals.Length; c++) AddMultiMesh(chunk, "FlowerPetals_" + c, _flowerPetalMesh, _flowerMaterials[c], petals[c]);
+        AddMultiMesh(chunk, "FlowerCenters", new SphereMesh { Radius = 1.0f, Height = 2.0f, RadialSegments = 6, Rings = 4 }, _flowerCenterMaterial, centers);
+    }
+
+    private void AddShrubs(Node3D chunk, Vector2I coordinate, float[,] heights)
+    {
+        var random = new Random(unchecked(WorldSeed ^ coordinate.X * 1000003 ^ coordinate.Y * 9176));
+        var transforms = new List<Transform3D>();
+        for (int i = 0; i < 8; i++)
+        {
+            int x = random.Next(1, ChunkSize - 1);
+            int z = random.Next(1, ChunkSize - 1);
+            if (!IsPlantable(heights, x, z)) continue;
+            float px = x + (float)random.NextDouble();
+            float pz = z + (float)random.NextDouble();
+            float y = SampleTerrainHeight(heights, px, pz);
+            float size = 0.30f + (float)random.NextDouble() * 0.35f;
+            transforms.Add(new Transform3D(Basis.FromScale(new Vector3(size, size * 0.72f, size)), new Vector3(px, y + size * 0.72f, pz)));
+            for (int lobe = 0; lobe < 2; lobe++)
+            {
+                float offsetX = ((float)random.NextDouble() - 0.5f) * size * 0.9f;
+                float offsetZ = ((float)random.NextDouble() - 0.5f) * size * 0.9f;
+                float lobeScale = size * (0.55f + (float)random.NextDouble() * 0.20f);
+                transforms.Add(new Transform3D(
+                    Basis.FromScale(new Vector3(lobeScale, lobeScale * 0.72f, lobeScale)),
+                    new Vector3(px + offsetX, y + lobeScale * 0.72f, pz + offsetZ)));
+            }
+        }
+        AddMultiMesh(chunk, "Shrubs", new SphereMesh { Radius = 1.0f, Height = 2.0f, RadialSegments = 8, Rings = 5 }, _shrubMaterial, transforms);
+    }
+
+    private static ArrayMesh CreateGrassMesh()
+    {
+        var surface = new SurfaceTool();
+        surface.Begin(Mesh.PrimitiveType.Triangles);
+        AddGrassBlade(surface, new Vector3(-0.5f, 0, 0), new Vector3(0.5f, 0, 0), new Vector3(0.12f, 1, 0), new Color(0.82f, 0.95f, 0.70f));
+        AddGrassBlade(surface, new Vector3(0, 0, -0.5f), new Vector3(0, 0, 0.5f), new Vector3(0, 1, 0.12f), new Color(0.92f, 1.0f, 0.78f));
+        surface.GenerateNormals();
+        return surface.Commit() as ArrayMesh;
+    }
+
+    private static void AddGrassBlade(SurfaceTool surface, Vector3 a, Vector3 b, Vector3 tip, Color color)
+    {
+        surface.SetColor(color); surface.AddVertex(a);
+        surface.SetColor(color); surface.AddVertex(b);
+        surface.SetColor(color); surface.AddVertex(tip);
+    }
+
+    private static ArrayMesh CreateFlowerPetalMesh()
+    {
+        var surface = new SurfaceTool();
+        surface.Begin(Mesh.PrimitiveType.Triangles);
+        for (int i = 0; i < 5; i++)
+        {
+            float angle = i * Mathf.Tau / 5.0f;
+            float next = (i + 1) * Mathf.Tau / 5.0f;
+            surface.SetColor(Colors.White); surface.AddVertex(Vector3.Zero);
+            surface.SetColor(Colors.White); surface.AddVertex(new Vector3(Mathf.Cos(angle) * 0.55f, 0, Mathf.Sin(angle) * 0.55f));
+            surface.SetColor(Colors.White); surface.AddVertex(new Vector3(Mathf.Cos(next) * 0.55f, 0, Mathf.Sin(next) * 0.55f));
+        }
+        surface.GenerateNormals();
+        return surface.Commit() as ArrayMesh;
+    }
+
+    private static void AddMultiMesh(Node3D chunk, string name, Mesh mesh, Material material, List<Transform3D> transforms)
+    {
+        if (transforms.Count == 0) return;
+        var multimesh = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, Mesh = mesh, InstanceCount = transforms.Count };
+        for (int i = 0; i < transforms.Count; i++) multimesh.SetInstanceTransform(i, transforms[i]);
+        chunk.AddChild(new MultiMeshInstance3D { Name = name, Multimesh = multimesh, MaterialOverride = material });
+    }
+
+    private static void AddColoredMultiMesh(Node3D chunk, string name, Mesh mesh, Material material, List<Transform3D> transforms, List<Color> colors)
+    {
+        if (transforms.Count == 0) return;
+        var multimesh = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, Mesh = mesh, InstanceCount = transforms.Count };
+        for (int i = 0; i < transforms.Count; i++) { multimesh.SetInstanceTransform(i, transforms[i]); multimesh.SetInstanceColor(i, colors[i]); }
+        chunk.AddChild(new MultiMeshInstance3D { Name = name, Multimesh = multimesh, MaterialOverride = material });
     }
 
     private static void AddTreeCanopy(List<Transform3D> transforms, int type, Vector3 origin, Random random)
