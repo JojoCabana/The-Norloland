@@ -31,7 +31,7 @@ jobs:
           include-templates: true
 
       - name: Build C# solution
-        run: godot --headless --editor --path . --build-solutions --quit
+        run: godot --headless --editor --path . --build-solutions --quit --verbose
 
       - name: Export Windows build
         run: |
