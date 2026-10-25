@@ -16,6 +16,7 @@ public partial class Main : Node3D
     private FastNoiseLite _biomeNoise = null!;
     private PlayerController _player = null!;
     private Label _hud = null!;
+    private Label _debugHud = null!;
     private Vector2I _lastCenter = new(int.MinValue, int.MinValue);
     private StandardMaterial3D _terrainMaterial = null!;
     private StandardMaterial3D _trunkMaterial = null!;
@@ -100,8 +101,29 @@ public partial class Main : Node3D
         if (_hud != null)
         {
             _hud.Text = "THE NORLOLAND  |  Seed: " + WorldSeed +
-                        "\nChunks loaded: " + _chunks.Count +
-                        "  |  WASD move  |  Space jump  |  Esc release mouse";
+                        "  |  Chunks: " + _chunks.Count +
+                        "  |  WASD move  |  Space jump  |  F3 debug  |  Esc release mouse";
+        }
+
+        if (_debugHud != null && _debugHud.Visible)
+        {
+            Vector3 position = _player.GlobalPosition;
+            _debugHud.Text = "DEBUG (F3)" +
+                "\nFPS: " + Engine.GetFramesPerSecond() +
+                "\nPosition: " + position.X.ToString("F1") + ", " + position.Y.ToString("F1") + ", " + position.Z.ToString("F1") +
+                "\nChunk: " + center.X + ", " + center.Y +
+                "\nChunks loaded: " + _chunks.Count + " / " + _wantedChunks.Count +
+                "  |  Queued: " + _pendingChunks.Count +
+                "\nView radius: " + ViewDistance + " chunks";
+        }
+    }
+
+    public override void _UnhandledInput(InputEvent @event)
+    {
+        if (@event is InputEventKey key && key.Pressed && !key.Echo && key.Keycode == Key.F3)
+        {
+            _debugHud.Visible = !_debugHud.Visible;
+            GetViewport().SetInputAsHandled();
         }
     }
 
@@ -144,6 +166,7 @@ public partial class Main : Node3D
         {
             Position = new Vector3(0, 55, 0)
         };
+        _player.GetNode<Camera3D>("Camera3D").Far = ChunkSize * (ViewDistance + 1.0f);
         AddChild(_player);
     }
 
@@ -162,6 +185,20 @@ public partial class Main : Node3D
         _hud.AddThemeConstantOverride("shadow_offset_x", 1);
         _hud.AddThemeConstantOverride("shadow_offset_y", 1);
         layer.AddChild(_hud);
+
+        _debugHud = new Label
+        {
+            Position = new Vector2(16, 78),
+            Text = "DEBUG",
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _debugHud.AddThemeFontSizeOverride("font_size", 16);
+        _debugHud.AddThemeColorOverride("font_color", Colors.White);
+        _debugHud.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.9f));
+        _debugHud.AddThemeConstantOverride("shadow_offset_x", 1);
+        _debugHud.AddThemeConstantOverride("shadow_offset_y", 1);
+        layer.AddChild(_debugHud);
         AddChild(layer);
     }
 
@@ -184,7 +221,11 @@ public partial class Main : Node3D
         for (int x = center.X - ViewDistance; x <= center.X + ViewDistance; x++)
         {
             for (int z = center.Y - ViewDistance; z <= center.Y + ViewDistance; z++)
-                _wantedChunks.Add(new Vector2I(x, z));
+            {
+                Vector2I offset = new(x - center.X, z - center.Y);
+                if (offset.LengthSquared() <= ViewDistance * ViewDistance)
+                    _wantedChunks.Add(new Vector2I(x, z));
+            }
         }
 
         foreach (Vector2I key in _chunks.Keys.ToArray())
@@ -249,10 +290,34 @@ public partial class Main : Node3D
             MaterialOverride = _terrainMaterial
         };
         chunk.AddChild(terrain);
-        terrain.CreateTrimeshCollision();
+
+        // A single heightmap collider per chunk avoids building a triangle mesh collider
+        // from every rendered terrain face. The height samples use the same grid as the mesh.
+        var heightMap = new HeightMapShape3D
+        {
+            MapWidth = ChunkSize,
+            MapDepth = ChunkSize,
+            MapData = CreateHeightMapData(heights)
+        };
+        var collision = new StaticBody3D { Name = "TerrainCollision" };
+        collision.AddChild(new CollisionShape3D
+        {
+            Shape = heightMap,
+            Position = new Vector3(ChunkSize * 0.5f, 0, ChunkSize * 0.5f)
+        });
+        chunk.AddChild(collision);
 
         AddTrees(chunk, coordinate, heights);
         return chunk;
+    }
+
+    private float[] CreateHeightMapData(int[,] heights)
+    {
+        var data = new float[ChunkSize * ChunkSize];
+        for (int z = 0; z < ChunkSize; z++)
+        for (int x = 0; x < ChunkSize; x++)
+            data[z * ChunkSize + x] = heights[x, z];
+        return data;
     }
 
     private enum WallDirection { NegativeX, PositiveX, NegativeZ, PositiveZ }
