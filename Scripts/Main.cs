@@ -36,11 +36,13 @@ public partial class Main : Node3D
     private StandardMaterial3D[] _leavesMaterials = null!;
     private StandardMaterial3D _grassMaterial = null!;
     private StandardMaterial3D _shrubMaterial = null!;
+    private StandardMaterial3D _shrubTwigMaterial = null!;
     private StandardMaterial3D _flowerStemMaterial = null!;
     private StandardMaterial3D _flowerCenterMaterial = null!;
     private StandardMaterial3D[] _flowerMaterials = null!;
     private Mesh _grassMesh = null!;
     private Mesh _shortGrassMesh = null!;
+    private Mesh _shrubLeafMesh = null!;
     private Mesh _flowerPetalMesh = null!;
     private bool _escapeWasPressed;
 
@@ -132,7 +134,10 @@ public partial class Main : Node3D
         _grassMaterial = CreateMaterial(Colors.White);
         _grassMaterial.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
         _grassMaterial.VertexColorUseAsAlbedo = true;
-        _shrubMaterial = CreateMaterial(new Color(0.20f, 0.34f, 0.13f));
+        _shrubMaterial = CreateMaterial(Colors.White);
+        _shrubMaterial.VertexColorUseAsAlbedo = true;
+        _shrubMaterial.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+        _shrubTwigMaterial = CreateMaterial(new Color(0.27f, 0.22f, 0.13f));
         _flowerStemMaterial = CreateMaterial(new Color(0.18f, 0.38f, 0.12f));
         _flowerCenterMaterial = CreateMaterial(new Color(0.95f, 0.68f, 0.13f));
         _flowerMaterials = new[]
@@ -146,6 +151,7 @@ public partial class Main : Node3D
         _flowerMaterials[2].CullMode = BaseMaterial3D.CullModeEnum.Disabled;
         _grassMesh = CreateGrassMesh();
         _shortGrassMesh = CreateGrassMesh(0.56f, 1.15f);
+        _shrubLeafMesh = CreateShrubLeafMesh();
         _flowerPetalMesh = CreateFlowerPetalMesh();
 
         CreateLighting();
@@ -728,7 +734,7 @@ public partial class Main : Node3D
         float rockAmount = Mathf.Clamp((slope - 1.4f) * 0.42f, 0.0f, 0.72f);
         Color terrain = grass.Lerp(rock, rockAmount);
         Color snow = new(0.78f, 0.80f, 0.76f);
-        float snowAmount = Mathf.Clamp((heights[x, z] - 36.0f) * 0.38f, 0.0f, 0.72f);
+        float snowAmount = Mathf.Clamp((heights[x, z] - 39.0f) * 0.34f, 0.0f, 0.62f);
         return terrain.Lerp(snow, snowAmount);
     }
 
@@ -738,10 +744,10 @@ public partial class Main : Node3D
         float slope = Mathf.Max(
             Mathf.Abs(GetHeight(worldX + 1, worldZ) - GetHeight(worldX - 1, worldZ)),
             Mathf.Abs(GetHeight(worldX, worldZ + 1) - GetHeight(worldX, worldZ - 1))) * 0.5f;
-        if (height >= 40.0f)
+        if (height >= 43.0f)
             return "Schneegebirge";
-        if (height >= 35.0f || slope >= 2.1f)
-            return "Felsiges Hochland";
+        if (height >= 39.0f || slope >= 2.5f)
+            return "Hügeliges Hochland";
 
         float biome = _biomeNoise.GetNoise2D(worldX, worldZ);
         if (biome < -0.42f)
@@ -761,8 +767,8 @@ public partial class Main : Node3D
         float detail = _detailNoise.GetNoise2D(worldX, worldZ);
         float ridgeField = _mountainNoise.GetNoise2D(worldX, worldZ);
         float mountainMask = Mathf.Clamp((ridgeField + 0.18f) * 1.2f, 0.0f, 1.0f);
-        float ridges = Mathf.Pow(mountainMask, 1.7f) * 15.0f;
-        return 25.0f + noise * 9.5f + detail * 1.3f + ridges;
+        float ridges = Mathf.Pow(mountainMask, 1.7f) * 4.5f;
+        return 27.0f + noise * 7.0f + detail * 0.9f + ridges;
     }
 
     private Color GetGrassColor(int worldX, int worldZ)
@@ -888,7 +894,7 @@ public partial class Main : Node3D
     private static bool IsPlantable(float[,] heights, int x, int z)
     {
         float h = heights[x, z];
-        return h < 36.0f &&
+        return h < 40.0f &&
             Mathf.Abs(h - heights[x - 1, z]) < 1.1f &&
             Mathf.Abs(h - heights[x + 1, z]) < 1.1f &&
             Mathf.Abs(h - heights[x, z - 1]) < 1.1f &&
@@ -899,8 +905,8 @@ public partial class Main : Node3D
     {
         var random = new Random(unchecked(WorldSeed ^ coordinate.X * 83492791 ^ coordinate.Y * 297121507));
         float biome = _biomeNoise.GetNoise2D(coordinate.X * ChunkSize + ChunkSize / 2, coordinate.Y * ChunkSize + ChunkSize / 2);
-        int shortCount = biome < -0.35f ? 65 : biome > 0.48f ? 175 : biome > 0.25f ? 245 : 220;
-        int tallCount = biome < -0.35f ? 16 : biome > 0.48f ? 42 : biome > 0.25f ? 72 : 58;
+        int shortCount = biome < -0.42f ? 140 : biome < -0.18f ? 240 : biome > 0.48f ? 300 : biome > 0.25f ? 470 : 410;
+        int tallCount = biome < -0.42f ? 24 : biome < -0.18f ? 42 : biome > 0.48f ? 58 : biome > 0.25f ? 110 : 90;
         var shortTransforms = new List<Transform3D>(shortCount);
         var shortColors = new List<Color>(shortCount);
         var tallTransforms = new List<Transform3D>(tallCount);
@@ -940,7 +946,7 @@ public partial class Main : Node3D
     {
         var random = new Random(unchecked(WorldSeed ^ coordinate.X * 1640531535 ^ coordinate.Y * 265443576));
         float biome = _biomeNoise.GetNoise2D(coordinate.X * ChunkSize + ChunkSize / 2, coordinate.Y * ChunkSize + ChunkSize / 2);
-        int desired = biome < -0.35f ? 2 : 10;
+        int desired = biome < -0.42f ? 2 : biome < -0.18f ? 5 : biome > 0.24f && biome <= 0.48f ? 18 : biome > 0.48f ? 7 : 11;
         var stems = new List<Transform3D>();
         var petals = new List<Transform3D>[] { new(), new(), new() };
         var centers = new List<Transform3D>();
@@ -967,8 +973,14 @@ public partial class Main : Node3D
     private void AddShrubs(Node3D chunk, Vector2I coordinate, float[,] heights)
     {
         var random = new Random(unchecked(WorldSeed ^ coordinate.X * 1000003 ^ coordinate.Y * 9176));
-        var transforms = new List<Transform3D>();
-        for (int i = 0; i < 8; i++)
+        int worldCenterX = coordinate.X * ChunkSize + ChunkSize / 2;
+        int worldCenterZ = coordinate.Y * ChunkSize + ChunkSize / 2;
+        float biome = _biomeNoise.GetNoise2D(worldCenterX, worldCenterZ);
+        int bushCount = biome < -0.42f ? 2 : biome < -0.18f ? 4 : biome > 0.48f ? 7 : biome > 0.24f ? 5 : 4;
+        var branchTransforms = new List<Transform3D>();
+        var leafTransforms = new List<Transform3D>();
+        var leafColors = new List<Color>();
+        for (int i = 0; i < bushCount; i++)
         {
             int x = random.Next(1, ChunkSize - 1);
             int z = random.Next(1, ChunkSize - 1);
@@ -976,19 +988,71 @@ public partial class Main : Node3D
             float px = x + (float)random.NextDouble();
             float pz = z + (float)random.NextDouble();
             float y = SampleTerrainHeight(heights, px, pz);
-            float size = 0.30f + (float)random.NextDouble() * 0.35f;
-            transforms.Add(new Transform3D(Basis.FromScale(new Vector3(size, size * 0.72f, size)), new Vector3(px, y + size * 0.72f, pz)));
-            for (int lobe = 0; lobe < 2; lobe++)
+            float size = 0.78f + (float)random.NextDouble() * 0.42f;
+            int branches = 5 + random.Next(0, 3);
+            for (int branch = 0; branch < branches; branch++)
             {
-                float offsetX = ((float)random.NextDouble() - 0.5f) * size * 0.9f;
-                float offsetZ = ((float)random.NextDouble() - 0.5f) * size * 0.9f;
-                float lobeScale = size * (0.55f + (float)random.NextDouble() * 0.20f);
-                transforms.Add(new Transform3D(
-                    Basis.FromScale(new Vector3(lobeScale, lobeScale * 0.72f, lobeScale)),
-                    new Vector3(px + offsetX, y + lobeScale * 0.72f, pz + offsetZ)));
+                float angle = (float)random.NextDouble() * Mathf.Tau;
+                float reach = size * (0.22f + (float)random.NextDouble() * 0.16f);
+                float branchHeight = size * (0.42f + (float)random.NextDouble() * 0.28f);
+                float tilt = 0.18f + (float)random.NextDouble() * 0.28f;
+                Vector3 branchBase = new(px, y + size * 0.08f, pz);
+                Vector3 branchCenter = branchBase + new Vector3(Mathf.Cos(angle) * reach * 0.42f, branchHeight * 0.5f, Mathf.Sin(angle) * reach * 0.42f);
+                branchTransforms.Add(new Transform3D(
+                    Basis.FromEuler(new Vector3(Mathf.Sin(angle) * tilt, angle, -Mathf.Cos(angle) * tilt))
+                        .Scaled(new Vector3(0.045f * size, branchHeight, 0.045f * size)),
+                    branchCenter));
+
+                for (int leaf = 0; leaf < 4; leaf++)
+                {
+                    float along = 0.38f + leaf * 0.15f;
+                    float spread = reach * along;
+                    Vector3 leafPosition = branchBase + new Vector3(
+                        Mathf.Cos(angle) * spread,
+                        branchHeight * along + (float)random.NextDouble() * 0.05f,
+                        Mathf.Sin(angle) * spread);
+                    float leafWidth = size * (0.18f + (float)random.NextDouble() * 0.12f);
+                    float leafHeight = size * (0.14f + (float)random.NextDouble() * 0.10f);
+                    Vector3 leafRotation = new(
+                        Mathf.Sin(angle) * (0.30f + (float)random.NextDouble() * 0.35f),
+                        angle + ((float)random.NextDouble() - 0.5f) * 0.65f,
+                        -Mathf.Cos(angle) * (0.22f + (float)random.NextDouble() * 0.30f));
+                    leafTransforms.Add(new Transform3D(
+                        Basis.FromEuler(leafRotation).Scaled(new Vector3(leafWidth, leafHeight, leafWidth * 0.22f)),
+                        leafPosition));
+                    float variation = (float)random.NextDouble() * 0.12f;
+                    Color tint = biome < -0.42f ? new Color(1.0f, 0.86f, 0.63f) :
+                        biome > 0.48f ? new Color(0.78f, 0.91f, 0.70f) : new Color(0.91f, 1.0f, 0.82f);
+                    leafColors.Add(tint * (0.94f + variation));
+                }
             }
         }
-        AddMultiMesh(chunk, "Shrubs", new SphereMesh { Radius = 1.0f, Height = 2.0f, RadialSegments = 8, Rings = 5 }, _shrubMaterial, transforms);
+        AddMultiMesh(chunk, "ShrubBranches", new CylinderMesh { TopRadius = 0.34f, BottomRadius = 0.5f, Height = 1.0f, RadialSegments = 5 }, _shrubTwigMaterial, branchTransforms);
+        AddColoredMultiMesh(chunk, "ShrubLeaves", _shrubLeafMesh, _shrubMaterial, leafTransforms, leafColors);
+    }
+
+    private static ArrayMesh CreateShrubLeafMesh()
+    {
+        var surface = new SurfaceTool();
+        surface.Begin(Mesh.PrimitiveType.Triangles);
+        Vector3 basePoint = Vector3.Zero;
+        Vector3 left = new(-0.48f, 0.40f, 0.015f);
+        Vector3 center = new(0, 0.46f, 0.075f);
+        Vector3 tip = new(0, 1.0f, 0.0f);
+        Vector3 right = new(0.48f, 0.40f, 0.015f);
+        Color baseColor = new(0.22f, 0.34f, 0.12f);
+        Color edgeColor = new(0.31f, 0.47f, 0.16f);
+        Color tipColor = new(0.38f, 0.53f, 0.20f);
+        AddGrassTriangle(surface, basePoint, left, center, baseColor, edgeColor, baseColor);
+        AddGrassTriangle(surface, left, tip, center, edgeColor, tipColor, baseColor);
+        AddGrassTriangle(surface, tip, right, center, tipColor, edgeColor, baseColor);
+        AddGrassTriangle(surface, right, basePoint, center, edgeColor, baseColor, baseColor);
+        AddGrassTriangle(surface, center, left, basePoint, baseColor, edgeColor, baseColor);
+        AddGrassTriangle(surface, center, tip, left, baseColor, tipColor, edgeColor);
+        AddGrassTriangle(surface, center, right, tip, baseColor, edgeColor, tipColor);
+        AddGrassTriangle(surface, center, basePoint, right, baseColor, baseColor, edgeColor);
+        surface.GenerateNormals();
+        return surface.Commit() as ArrayMesh;
     }
 
     private static ArrayMesh CreateGrassMesh(float heightScale = 1.0f, float widthScale = 1.0f)
