@@ -1,0 +1,49 @@
+name: Build Windows prototype
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "**.cs"
+      - "**.tscn"
+      - "**.tres"
+      - "project.godot"
+      - "*.csproj"
+      - "export_presets.cfg"
+      - ".github/workflows/windows-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  export-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Godot .NET and export templates
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.4.1
+          use-dotnet: true
+          include-templates: true
+
+      - name: Build C# solution
+        run: godot --headless --editor --path . --build-solutions --quit
+
+      - name: Export Windows build
+        run: |
+          mkdir -p build
+          godot --headless --path . --export-release "Windows Desktop" build/TheNorloland.exe
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: TheNorloland-Windows
+          path: |
+            build/TheNorloland.exe
+            build/TheNorloland.pck
+          if-no-files-found: error
+          retention-days: 14
