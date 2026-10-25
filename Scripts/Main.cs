@@ -13,6 +13,7 @@ public partial class Main : Node3D
     private readonly HashSet<Vector2I> _wantedChunks = new();
     private Queue<Vector2I> _pendingChunks = new();
     private FastNoiseLite _terrainNoise = null!;
+    private FastNoiseLite _detailNoise = null!;
     private FastNoiseLite _biomeNoise = null!;
     private PlayerController _player = null!;
     private Label _hud = null!;
@@ -40,6 +41,16 @@ public partial class Main : Node3D
             Frequency = 0.008f,
             FractalOctaves = 4,
             FractalGain = 0.48f,
+            FractalLacunarity = 2.0f
+        };
+
+        _detailNoise = new FastNoiseLite
+        {
+            Seed = WorldSeed ^ 0x2c9277b5,
+            NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex,
+            Frequency = 0.035f,
+            FractalOctaves = 2,
+            FractalGain = 0.45f,
             FractalLacunarity = 2.0f
         };
 
@@ -251,10 +262,19 @@ public partial class Main : Node3D
             Position = new Vector3(coordinate.X * ChunkSize, 0, coordinate.Y * ChunkSize)
         };
 
-        int[,] heights = new int[ChunkSize, ChunkSize];
-        for (int x = 0; x < ChunkSize; x++)
-        for (int z = 0; z < ChunkSize; z++)
+        int sampleCount = ChunkSize + 1;
+        float[,] heights = new float[sampleCount, sampleCount];
+        for (int x = 0; x < sampleCount; x++)
+        for (int z = 0; z < sampleCount; z++)
             heights[x, z] = GetHeight(coordinate.X * ChunkSize + x, coordinate.Y * ChunkSize + z);
+
+        Color[,] terrainColors = new Color[sampleCount, sampleCount];
+        for (int x = 0; x < sampleCount; x++)
+        for (int z = 0; z < sampleCount; z++)
+            terrainColors[x, z] = GetTerrainColor(
+                heights, x, z,
+                coordinate.X * ChunkSize + x,
+                coordinate.Y * ChunkSize + z);
 
         var surface = new SurfaceTool();
         surface.Begin(Mesh.PrimitiveType.Triangles);
@@ -263,24 +283,26 @@ public partial class Main : Node3D
         {
             for (int z = 0; z < ChunkSize; z++)
             {
-                int worldX = coordinate.X * ChunkSize + x;
-                int worldZ = coordinate.Y * ChunkSize + z;
-                int h = heights[x, z];
+                Vector3 p00 = new(x, heights[x, z], z);
+                Vector3 p01 = new(x, heights[x, z + 1], z + 1);
+                Vector3 p11 = new(x + 1, heights[x + 1, z + 1], z + 1);
+                Vector3 p10 = new(x + 1, heights[x + 1, z], z);
+                Color c00 = terrainColors[x, z];
+                Color c01 = terrainColors[x, z + 1];
+                Color c11 = terrainColors[x + 1, z + 1];
+                Color c10 = terrainColors[x + 1, z];
 
-                Color topColor = GetGrassColor(worldX, worldZ);
-                AddQuad(surface,
-                    new Vector3(x, h, z),
-                    new Vector3(x, h, z + 1),
-                    new Vector3(x + 1, h, z + 1),
-                    new Vector3(x + 1, h, z),
-                    Vector3.Up, topColor);
-
-                AddWall(surface, x, z, h, GetHeight(worldX - 1, worldZ), WallDirection.NegativeX);
-                AddWall(surface, x, z, h, GetHeight(worldX + 1, worldZ), WallDirection.PositiveX);
-                AddWall(surface, x, z, h, GetHeight(worldX, worldZ - 1), WallDirection.NegativeZ);
-                AddWall(surface, x, z, h, GetHeight(worldX, worldZ + 1), WallDirection.PositiveZ);
+                AddTerrainVertex(surface, p00, c00);
+                AddTerrainVertex(surface, p01, c01);
+                AddTerrainVertex(surface, p11, c11);
+                AddTerrainVertex(surface, p00, c00);
+                AddTerrainVertex(surface, p11, c11);
+                AddTerrainVertex(surface, p10, c10);
             }
         }
+
+        surface.Index();
+        surface.GenerateNormals();
 
         ArrayMesh mesh = surface.Commit() as ArrayMesh;
         var terrain = new MeshInstance3D
@@ -297,7 +319,7 @@ public partial class Main : Node3D
         {
             MapWidth = ChunkSize + 1,
             MapDepth = ChunkSize + 1,
-            MapData = CreateHeightMapData(coordinate)
+            MapData = CreateHeightMapData(heights)
         };
         var collision = new StaticBody3D { Name = "TerrainCollision" };
         collision.AddChild(new CollisionShape3D
@@ -311,98 +333,41 @@ public partial class Main : Node3D
         return chunk;
     }
 
-    private float[] CreateHeightMapData(Vector2I coordinate)
+    private float[] CreateHeightMapData(float[,] heights)
     {
         int sampleCount = ChunkSize + 1;
         var data = new float[sampleCount * sampleCount];
         for (int z = 0; z < sampleCount; z++)
         for (int x = 0; x < sampleCount; x++)
-            data[z * sampleCount + x] = GetHeight(
-                coordinate.X * ChunkSize + x,
-                coordinate.Y * ChunkSize + z);
+            data[z * sampleCount + x] = heights[x, z];
         return data;
     }
 
-    private enum WallDirection { NegativeX, PositiveX, NegativeZ, PositiveZ }
-
-    private void AddWall(SurfaceTool surface, int x, int z, int height, int neighbourHeight, WallDirection direction)
-    {
-        if (height <= neighbourHeight)
-            return;
-
-        for (int y = neighbourHeight; y < height; y++)
-        {
-            Color color = y >= height - 3
-                ? new Color(0.34f, 0.23f, 0.13f)
-                : new Color(0.36f, 0.37f, 0.36f);
-
-            Vector3 a, b, c, d, normal;
-            switch (direction)
-            {
-                case WallDirection.NegativeX:
-                    a = new Vector3(x, y, z + 1);
-                    b = new Vector3(x, y + 1, z + 1);
-                    c = new Vector3(x, y + 1, z);
-                    d = new Vector3(x, y, z);
-                    normal = Vector3.Left;
-                    break;
-                case WallDirection.PositiveX:
-                    a = new Vector3(x + 1, y, z);
-                    b = new Vector3(x + 1, y + 1, z);
-                    c = new Vector3(x + 1, y + 1, z + 1);
-                    d = new Vector3(x + 1, y, z + 1);
-                    normal = Vector3.Right;
-                    break;
-                case WallDirection.NegativeZ:
-                    a = new Vector3(x, y, z);
-                    b = new Vector3(x, y + 1, z);
-                    c = new Vector3(x + 1, y + 1, z);
-                    d = new Vector3(x + 1, y, z);
-                    normal = Vector3.Back;
-                    break;
-                default:
-                    a = new Vector3(x + 1, y, z + 1);
-                    b = new Vector3(x + 1, y + 1, z + 1);
-                    c = new Vector3(x, y + 1, z + 1);
-                    d = new Vector3(x, y, z + 1);
-                    normal = Vector3.Forward;
-                    break;
-            }
-
-            AddQuad(surface, a, b, c, d, normal, color);
-        }
-    }
-
-    private static void AddQuad(
-        SurfaceTool surface,
-        Vector3 a, Vector3 b, Vector3 c, Vector3 d,
-        Vector3 normal, Color color)
+    private static void AddTerrainVertex(SurfaceTool surface, Vector3 position, Color color)
     {
         surface.SetColor(color);
-        surface.SetNormal(normal);
-        surface.AddVertex(a);
-        surface.SetColor(color);
-        surface.SetNormal(normal);
-        surface.AddVertex(b);
-        surface.SetColor(color);
-        surface.SetNormal(normal);
-        surface.AddVertex(c);
-
-        surface.SetColor(color);
-        surface.SetNormal(normal);
-        surface.AddVertex(a);
-        surface.SetColor(color);
-        surface.SetNormal(normal);
-        surface.AddVertex(c);
-        surface.SetColor(color);
-        surface.SetNormal(normal);
-        surface.AddVertex(d);
+        surface.AddVertex(position);
     }
 
-    private int GetHeight(int worldX, int worldZ)
+    private Color GetTerrainColor(float[,] heights, int x, int z, int worldX, int worldZ)
+    {
+        float left = x > 0 ? heights[x - 1, z] : GetHeight(worldX - 1, worldZ);
+        float right = x < ChunkSize ? heights[x + 1, z] : GetHeight(worldX + 1, worldZ);
+        float back = z > 0 ? heights[x, z - 1] : GetHeight(worldX, worldZ - 1);
+        float forward = z < ChunkSize ? heights[x, z + 1] : GetHeight(worldX, worldZ + 1);
+        float slope = Mathf.Max(Mathf.Abs(right - left), Mathf.Abs(forward - back)) * 0.5f;
+
+        Color grass = GetGrassColor(worldX, worldZ);
+        Color rock = new(0.38f, 0.37f, 0.34f);
+        float rockAmount = Mathf.Clamp((slope - 1.4f) * 0.42f, 0.0f, 0.72f);
+        return grass.Lerp(rock, rockAmount);
+    }
+
+    private float GetHeight(int worldX, int worldZ)
     {
         float noise = _terrainNoise.GetNoise2D(worldX, worldZ);
-        return 14 + Mathf.RoundToInt((noise + 1.0f) * 12.0f);
+        float detail = _detailNoise.GetNoise2D(worldX, worldZ);
+        return 26.0f + noise * 12.0f + detail * 1.5f;
     }
 
     private Color GetGrassColor(int worldX, int worldZ)
@@ -415,7 +380,7 @@ public partial class Main : Node3D
         return new Color(0.29f, 0.43f, 0.20f);
     }
 
-    private void AddTrees(Node3D chunk, Vector2I coordinate, int[,] heights)
+    private void AddTrees(Node3D chunk, Vector2I coordinate, float[,] heights)
     {
         int treeSeed = unchecked(WorldSeed ^ (coordinate.X * 73856093) ^ (coordinate.Y * 19349663));
         var random = new Random(treeSeed);
@@ -426,15 +391,15 @@ public partial class Main : Node3D
         {
             int x = random.Next(1, ChunkSize - 1);
             int z = random.Next(1, ChunkSize - 1);
-            int h = heights[x, z];
+            float h = (heights[x, z] + heights[x + 1, z] + heights[x, z + 1] + heights[x + 1, z + 1]) * 0.25f;
 
             if (random.NextDouble() > 0.58)
                 continue;
 
-            if (Math.Abs(h - heights[x - 1, z]) > 2 ||
-                Math.Abs(h - heights[x + 1, z]) > 2 ||
-                Math.Abs(h - heights[x, z - 1]) > 2 ||
-                Math.Abs(h - heights[x, z + 1]) > 2)
+            if (Math.Abs(h - heights[x - 1, z]) > 1.5f ||
+                Math.Abs(h - heights[x + 1, z]) > 1.5f ||
+                Math.Abs(h - heights[x, z - 1]) > 1.5f ||
+                Math.Abs(h - heights[x, z + 1]) > 1.5f)
                 continue;
 
             float px = x + 0.5f;
