@@ -14,10 +14,15 @@ public partial class Main : Node3D
     private Queue<Vector2I> _pendingChunks = new();
     private FastNoiseLite _terrainNoise = null!;
     private FastNoiseLite _detailNoise = null!;
+    private FastNoiseLite _surfaceNoise = null!;
     private FastNoiseLite _biomeNoise = null!;
     private PlayerController _player = null!;
     private Label _hud = null!;
     private Label _debugHud = null!;
+    private Control _menuRoot = null!;
+    private PanelContainer _pauseMenu = null!;
+    private PanelContainer _settingsMenu = null!;
+    private Label _viewDistanceLabel = null!;
     private Vector2I _lastCenter = new(int.MinValue, int.MinValue);
     private StandardMaterial3D _terrainMaterial = null!;
     private StandardMaterial3D _trunkMaterial = null!;
@@ -25,6 +30,7 @@ public partial class Main : Node3D
 
     public override void _Ready()
     {
+        ProcessMode = ProcessModeEnum.Always;
         AddInputAction("move_forward", Key.W);
         AddInputAction("move_back", Key.S);
         AddInputAction("move_left", Key.A);
@@ -54,6 +60,16 @@ public partial class Main : Node3D
             FractalLacunarity = 2.0f
         };
 
+        _surfaceNoise = new FastNoiseLite
+        {
+            Seed = WorldSeed ^ 0x6d2b79f5,
+            NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex,
+            Frequency = 0.22f,
+            FractalOctaves = 2,
+            FractalGain = 0.5f,
+            FractalLacunarity = 2.0f
+        };
+
         _biomeNoise = new FastNoiseLite
         {
             Seed = WorldSeed ^ 0x5f3759df,
@@ -68,6 +84,7 @@ public partial class Main : Node3D
             Roughness = 1.0f,
             CullMode = BaseMaterial3D.CullModeEnum.Disabled
         };
+        _terrainMaterial.AlbedoTexture = CreateGroundTexture();
 
         _trunkMaterial = new StandardMaterial3D
         {
@@ -84,6 +101,7 @@ public partial class Main : Node3D
         CreateLighting();
         CreatePlayer();
         CreateHud();
+        CreateMenus();
         UpdateChunkTargets(true);
     }
 
@@ -134,6 +152,18 @@ public partial class Main : Node3D
         if (@event is InputEventKey key && key.Pressed && !key.Echo && key.Keycode == Key.F3)
         {
             _debugHud.Visible = !_debugHud.Visible;
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
+        if (@event is InputEventKey escape && escape.Pressed && !escape.Echo && escape.Keycode == Key.Escape)
+        {
+            if (_settingsMenu.Visible)
+                ShowPauseMenu();
+            else if (_pauseMenu.Visible)
+                SetMenuOpen(false);
+            else
+                ShowPauseMenu();
             GetViewport().SetInputAsHandled();
         }
     }
@@ -211,6 +241,141 @@ public partial class Main : Node3D
         _debugHud.AddThemeConstantOverride("shadow_offset_y", 1);
         layer.AddChild(_debugHud);
         AddChild(layer);
+    }
+
+    private void CreateMenus()
+    {
+        var menuLayer = new CanvasLayer
+        {
+            Layer = 10,
+            ProcessMode = ProcessModeEnum.Always
+        };
+        _menuRoot = new Control
+        {
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Stop,
+            ProcessMode = ProcessModeEnum.Always
+        };
+        _menuRoot.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        menuLayer.AddChild(_menuRoot);
+
+        var backdrop = new ColorRect
+        {
+            Color = new Color(0.015f, 0.025f, 0.035f, 0.78f),
+            MouseFilter = Control.MouseFilterEnum.Stop
+        };
+        backdrop.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _menuRoot.AddChild(backdrop);
+
+        var center = new CenterContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        center.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _menuRoot.AddChild(center);
+
+        _pauseMenu = new PanelContainer { CustomMinimumSize = new Vector2(420, 0) };
+        center.AddChild(_pauseMenu);
+        var pauseContent = new VBoxContainer();
+        pauseContent.AddThemeConstantOverride("separation", 14);
+        _pauseMenu.AddChild(pauseContent);
+        pauseContent.AddChild(CreateMenuTitle("PAUSE"));
+        pauseContent.AddChild(CreateMenuButton("Weiter", () => SetMenuOpen(false)));
+        pauseContent.AddChild(CreateMenuButton("Einstellungen", ShowSettingsMenu));
+
+        _settingsMenu = new PanelContainer
+        {
+            CustomMinimumSize = new Vector2(460, 0),
+            Visible = false
+        };
+        center.AddChild(_settingsMenu);
+        var settingsContent = new VBoxContainer();
+        settingsContent.AddThemeConstantOverride("separation", 14);
+        _settingsMenu.AddChild(settingsContent);
+        settingsContent.AddChild(CreateMenuTitle("EINSTELLUNGEN"));
+
+        var distanceTitle = new Label
+        {
+            Text = "Sichtweite",
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        settingsContent.AddChild(distanceTitle);
+        _viewDistanceLabel = new Label { HorizontalAlignment = HorizontalAlignment.Center };
+        settingsContent.AddChild(_viewDistanceLabel);
+
+        var distanceSlider = new HSlider
+        {
+            MinValue = 1,
+            MaxValue = 5,
+            Step = 1,
+            Value = ViewDistance,
+            CustomMinimumSize = new Vector2(360, 32),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill
+        };
+        distanceSlider.ValueChanged += SetViewDistance;
+        settingsContent.AddChild(distanceSlider);
+        UpdateViewDistanceLabel();
+
+        var buttonRow = new HBoxContainer();
+        buttonRow.AddThemeConstantOverride("separation", 12);
+        settingsContent.AddChild(buttonRow);
+        buttonRow.AddChild(CreateMenuButton("Zurück", ShowPauseMenu));
+        buttonRow.AddChild(CreateMenuButton("Weiter", () => SetMenuOpen(false)));
+
+        AddChild(menuLayer);
+    }
+
+    private static Label CreateMenuTitle(string text)
+    {
+        var title = new Label
+        {
+            Text = text,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        title.AddThemeFontSizeOverride("font_size", 28);
+        return title;
+    }
+
+    private static Button CreateMenuButton(string text, Action onPressed)
+    {
+        var button = new Button
+        {
+            Text = text,
+            CustomMinimumSize = new Vector2(0, 42),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill
+        };
+        button.Pressed += onPressed;
+        return button;
+    }
+
+    private void ShowPauseMenu()
+    {
+        _pauseMenu.Visible = true;
+        _settingsMenu.Visible = false;
+        SetMenuOpen(true);
+    }
+
+    private void ShowSettingsMenu()
+    {
+        _pauseMenu.Visible = false;
+        _settingsMenu.Visible = true;
+    }
+
+    private void SetMenuOpen(bool isOpen)
+    {
+        _menuRoot.Visible = isOpen;
+        GetTree().Paused = isOpen;
+        Input.MouseMode = isOpen ? Input.MouseModeEnum.Visible : Input.MouseModeEnum.Captured;
+    }
+
+    private void SetViewDistance(double value)
+    {
+        ViewDistance = Mathf.RoundToInt((float)value);
+        _player.GetNode<Camera3D>("Camera3D").Far = ChunkSize * (ViewDistance + 1.0f);
+        UpdateViewDistanceLabel();
+        UpdateChunkTargets(true);
+    }
+
+    private void UpdateViewDistanceLabel()
+    {
+        _viewDistanceLabel.Text = $"{ViewDistance} Chunkringe · ca. {ViewDistance * ChunkSize} m";
     }
 
     private Vector2I GetPlayerChunk()
@@ -292,12 +457,12 @@ public partial class Main : Node3D
                 Color c11 = terrainColors[x + 1, z + 1];
                 Color c10 = terrainColors[x + 1, z];
 
-                AddTerrainVertex(surface, p00, c00);
-                AddTerrainVertex(surface, p01, c01);
-                AddTerrainVertex(surface, p11, c11);
-                AddTerrainVertex(surface, p00, c00);
-                AddTerrainVertex(surface, p11, c11);
-                AddTerrainVertex(surface, p10, c10);
+                AddTerrainVertex(surface, p00, c00, new Vector2(worldX, worldZ));
+                AddTerrainVertex(surface, p01, c01, new Vector2(worldX, worldZ + 1));
+                AddTerrainVertex(surface, p11, c11, new Vector2(worldX + 1, worldZ + 1));
+                AddTerrainVertex(surface, p00, c00, new Vector2(worldX, worldZ));
+                AddTerrainVertex(surface, p11, c11, new Vector2(worldX + 1, worldZ + 1));
+                AddTerrainVertex(surface, p10, c10, new Vector2(worldX + 1, worldZ));
             }
         }
 
@@ -343,10 +508,69 @@ public partial class Main : Node3D
         return data;
     }
 
-    private static void AddTerrainVertex(SurfaceTool surface, Vector3 position, Color color)
+    private static void AddTerrainVertex(SurfaceTool surface, Vector3 position, Color color, Vector2 uv)
     {
+        surface.SetUv(uv);
         surface.SetColor(color);
         surface.AddVertex(position);
+    }
+
+    private ImageTexture CreateGroundTexture()
+    {
+        const int textureSize = 256;
+        var random = new Random(WorldSeed ^ 0x3ab17);
+        float[,] broadNoise = CreateNoiseGrid(random, textureSize / 64);
+        float[,] patchNoise = CreateNoiseGrid(random, textureSize / 16);
+        float[,] detailNoise = CreateNoiseGrid(random, textureSize / 4);
+        float[,] grainNoise = CreateNoiseGrid(random, textureSize);
+        byte[] pixels = new byte[textureSize * textureSize * 3];
+
+        for (int y = 0; y < textureSize; y++)
+        for (int x = 0; x < textureSize; x++)
+        {
+            float broad = SampleTileNoise(broadNoise, x, y, 64);
+            float patch = SampleTileNoise(patchNoise, x, y, 16);
+            float detail = SampleTileNoise(detailNoise, x, y, 4);
+            float grain = SampleTileNoise(grainNoise, x, y, 1);
+            float value = Mathf.Clamp(
+                0.82f + (broad - 0.5f) * 0.18f + (patch - 0.5f) * 0.14f +
+                (detail - 0.5f) * 0.10f + (grain - 0.5f) * 0.06f,
+                0.62f, 1.0f);
+            int pixel = (y * textureSize + x) * 3;
+            pixels[pixel] = (byte)Mathf.RoundToInt(value * 0.96f * 255.0f);
+            pixels[pixel + 1] = (byte)Mathf.RoundToInt(value * 255.0f);
+            pixels[pixel + 2] = (byte)Mathf.RoundToInt(value * 0.88f * 255.0f);
+        }
+
+        Image image = Image.CreateFromData(textureSize, textureSize, false, Image.Format.Rgb8, pixels);
+        return ImageTexture.CreateFromImage(image);
+    }
+
+    private static float[,] CreateNoiseGrid(Random random, int size)
+    {
+        var grid = new float[size, size];
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+            grid[x, y] = (float)random.NextDouble();
+        return grid;
+    }
+
+    private static float SampleTileNoise(float[,] grid, int x, int y, int cellSize)
+    {
+        int gridSize = grid.GetLength(0);
+        float gx = (float)x / cellSize;
+        float gy = (float)y / cellSize;
+        int x0 = Mathf.FloorToInt(gx) % gridSize;
+        int y0 = Mathf.FloorToInt(gy) % gridSize;
+        int x1 = (x0 + 1) % gridSize;
+        int y1 = (y0 + 1) % gridSize;
+        float tx = gx - Mathf.Floor(gx);
+        float ty = gy - Mathf.Floor(gy);
+        tx = tx * tx * (3.0f - 2.0f * tx);
+        ty = ty * ty * (3.0f - 2.0f * ty);
+        float top = Mathf.Lerp(grid[x0, y0], grid[x1, y0], tx);
+        float bottom = Mathf.Lerp(grid[x0, y1], grid[x1, y1], tx);
+        return Mathf.Lerp(top, bottom, ty);
     }
 
     private Color GetTerrainColor(float[,] heights, int x, int z, int worldX, int worldZ)
@@ -358,6 +582,10 @@ public partial class Main : Node3D
         float slope = Mathf.Max(Mathf.Abs(right - left), Mathf.Abs(forward - back)) * 0.5f;
 
         Color grass = GetGrassColor(worldX, worldZ);
+        float groundVariation = _surfaceNoise.GetNoise2D(worldX, worldZ);
+        Color soil = new(0.39f, 0.34f, 0.24f);
+        grass = grass.Lerp(soil, Mathf.Clamp(0.08f + groundVariation * 0.12f, 0.0f, 0.22f));
+        grass *= 0.94f + _detailNoise.GetNoise2D(worldX, worldZ) * 0.08f;
         Color rock = new(0.38f, 0.37f, 0.34f);
         float rockAmount = Mathf.Clamp((slope - 1.4f) * 0.42f, 0.0f, 0.72f);
         return grass.Lerp(rock, rockAmount);
@@ -405,8 +633,29 @@ public partial class Main : Node3D
             float px = x + 0.5f;
             float pz = z + 0.5f;
             trunkTransforms.Add(new Transform3D(Basis.Identity, new Vector3(px, h + 1.6f, pz)));
-            Basis leafBasis = Basis.FromScale(new Vector3(1.15f, 1.45f, 1.15f));
-            leafTransforms.Add(new Transform3D(leafBasis, new Vector3(px, h + 3.4f, pz)));
+            Vector3[] canopyOffsets =
+            {
+                new Vector3(0.0f, 4.0f, 0.0f),
+                new Vector3(0.42f, 3.45f, 0.08f),
+                new Vector3(-0.38f, 3.42f, 0.18f),
+                new Vector3(0.08f, 3.38f, -0.44f),
+                new Vector3(-0.1f, 3.28f, -0.28f)
+            };
+            for (int cluster = 0; cluster < canopyOffsets.Length; cluster++)
+            {
+                Vector3 offset = canopyOffsets[cluster];
+                float size = cluster == 0 ? 1.0f : 0.76f + (float)random.NextDouble() * 0.22f;
+                Vector3 scale = new(
+                    1.05f * size,
+                    (cluster == 0 ? 1.3f : 1.0f) * size,
+                    1.02f * size);
+                Basis leafBasis = Basis.FromScale(scale);
+                Vector3 jitter = new(
+                    ((float)random.NextDouble() - 0.5f) * 0.18f,
+                    ((float)random.NextDouble() - 0.5f) * 0.12f,
+                    ((float)random.NextDouble() - 0.5f) * 0.18f);
+                leafTransforms.Add(new Transform3D(leafBasis, new Vector3(px, h, pz) + offset + jitter));
+            }
         }
 
         if (trunkTransforms.Count == 0)
@@ -442,8 +691,8 @@ public partial class Main : Node3D
         {
             Radius = 1.0f,
             Height = 2.0f,
-            RadialSegments = 7,
-            Rings = 4
+            RadialSegments = 12,
+            Rings = 8
         };
         var leafMultiMesh = new MultiMesh
         {
