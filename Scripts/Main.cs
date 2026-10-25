@@ -166,8 +166,8 @@ public partial class Main : Node3D
         {
             Position = new Vector3(0, 55, 0)
         };
-        _player.GetNode<Camera3D>("Camera3D").Far = ChunkSize * (ViewDistance + 1.0f);
         AddChild(_player);
+        _player.GetNode<Camera3D>("Camera3D").Far = ChunkSize * (ViewDistance + 1.0f);
     }
 
     private void CreateHud()
