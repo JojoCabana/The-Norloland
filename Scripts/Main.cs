@@ -22,6 +22,7 @@ public partial class Main : Node3D
     private FastNoiseLite _detailNoise = null!;
     private FastNoiseLite _surfaceNoise = null!;
     private FastNoiseLite _biomeNoise = null!;
+    private FastNoiseLite _mountainNoise = null!;
     private PlayerController _player = null!;
     private Label _hud = null!;
     private Label _debugHud = null!;
@@ -40,7 +41,6 @@ public partial class Main : Node3D
     private StandardMaterial3D[] _flowerMaterials = null!;
     private Mesh _grassMesh = null!;
     private Mesh _flowerPetalMesh = null!;
-    private bool _escapeWasPressed;
 
     public override void _Ready()
     {
@@ -92,6 +92,17 @@ public partial class Main : Node3D
             FractalOctaves = 2
         };
 
+        _mountainNoise = new FastNoiseLite
+        {
+            Seed = WorldSeed ^ 0x1b873593,
+            NoiseType = FastNoiseLite.NoiseTypeEnum.Simplex,
+            Frequency = 0.0045f,
+            FractalType = FastNoiseLite.FractalTypeEnum.Ridged,
+            FractalOctaves = 3,
+            FractalGain = 0.5f,
+            FractalLacunarity = 2.0f
+        };
+
         _terrainMaterial = new StandardMaterial3D
         {
             VertexColorUseAsAlbedo = true,
@@ -115,7 +126,7 @@ public partial class Main : Node3D
             CreateMaterial(new Color(0.34f, 0.39f, 0.15f))
         };
 
-        _grassMaterial = CreateMaterial(new Color(0.45f, 0.60f, 0.27f));
+        _grassMaterial = CreateMaterial(Colors.White);
         _grassMaterial.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
         _grassMaterial.VertexColorUseAsAlbedo = true;
         _shrubMaterial = CreateMaterial(new Color(0.20f, 0.34f, 0.13f));
@@ -144,27 +155,24 @@ public partial class Main : Node3D
     {
         if (_player == null)
             return;
-
-        bool escapePressed = Input.IsKeyPressed(Key.Escape);
-        if (escapePressed && !_escapeWasPressed)
-            TogglePauseMenu();
-        _escapeWasPressed = escapePressed;
-
         Vector2I center = GetPlayerChunk();
-        if (center != _lastCenter)
-            UpdateChunkTargets(false);
-
-        // Build no more than one chunk per frame to keep generation manageable.
-        while (_pendingChunks.Count > 0)
+        if (!GetTree().Paused)
         {
-            Vector2I next = _pendingChunks.Dequeue();
-            if (!_wantedChunks.Contains(next) || _chunks.ContainsKey(next))
-                continue;
+            if (center != _lastCenter)
+                UpdateChunkTargets(false);
 
-            Node3D chunk = BuildChunk(next);
-            AddChild(chunk);
-            _chunks[next] = chunk;
-            break;
+            // Build no more than one chunk per frame to keep generation manageable.
+            while (_pendingChunks.Count > 0)
+            {
+                Vector2I next = _pendingChunks.Dequeue();
+                if (!_wantedChunks.Contains(next) || _chunks.ContainsKey(next))
+                    continue;
+
+                Node3D chunk = BuildChunk(next);
+                AddChild(chunk);
+                _chunks[next] = chunk;
+                break;
+            }
         }
 
         if (_hud != null)
@@ -180,6 +188,7 @@ public partial class Main : Node3D
             _debugHud.Text = "DEBUG (F3)" +
                 "\nFPS: " + Engine.GetFramesPerSecond() +
                 "\nPosition: " + position.X.ToString("F1") + ", " + position.Y.ToString("F1") + ", " + position.Z.ToString("F1") +
+                "\nTerrain: " + GetTerrainName(Mathf.FloorToInt(position.X), Mathf.FloorToInt(position.Z)) +
                 "\nChunk: " + center.X + ", " + center.Y +
                 "\nChunks loaded: " + _chunks.Count + " / " + _wantedChunks.Count +
                 "  |  Queued: " + _pendingChunks.Count +
@@ -189,13 +198,21 @@ public partial class Main : Node3D
 
     public override void _Input(InputEvent @event)
     {
-        if (@event is InputEventKey key && key.Pressed && !key.Echo && key.Keycode == Key.F3)
+        if (@event is not InputEventKey key || !key.Pressed || key.Echo)
+            return;
+
+        if (key.Keycode == Key.F3)
         {
             _debugHud.Visible = !_debugHud.Visible;
             GetViewport().SetInputAsHandled();
             return;
         }
 
+        if (key.Keycode == Key.Escape && _menuRoot != null)
+        {
+            TogglePauseMenu();
+            GetViewport().SetInputAsHandled();
+        }
     }
 
     private void TogglePauseMenu()
@@ -315,7 +332,7 @@ public partial class Main : Node3D
     {
         var menuLayer = new CanvasLayer
         {
-            Layer = 10,
+            Layer = 100,
             ProcessMode = ProcessModeEnum.Always
         };
         _menuRoot = new Control
@@ -326,6 +343,7 @@ public partial class Main : Node3D
         };
         _menuRoot.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         menuLayer.AddChild(_menuRoot);
+        _menuRoot.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
 
         var backdrop = new ColorRect
         {
@@ -340,6 +358,7 @@ public partial class Main : Node3D
         _menuRoot.AddChild(center);
 
         _pauseMenu = new PanelContainer { CustomMinimumSize = new Vector2(420, 0) };
+        _pauseMenu.AddThemeStyleboxOverride("panel", CreateMenuPanelStyle());
         center.AddChild(_pauseMenu);
         var pauseContent = new VBoxContainer();
         pauseContent.AddThemeConstantOverride("separation", 14);
@@ -353,6 +372,7 @@ public partial class Main : Node3D
             CustomMinimumSize = new Vector2(460, 0),
             Visible = false
         };
+        _settingsMenu.AddThemeStyleboxOverride("panel", CreateMenuPanelStyle());
         center.AddChild(_settingsMenu);
         var settingsContent = new VBoxContainer();
         settingsContent.AddThemeConstantOverride("separation", 14);
@@ -398,7 +418,30 @@ public partial class Main : Node3D
             HorizontalAlignment = HorizontalAlignment.Center
         };
         title.AddThemeFontSizeOverride("font_size", 28);
+        title.AddThemeColorOverride("font_color", Colors.White);
         return title;
+    }
+
+    private static StyleBoxFlat CreateMenuPanelStyle()
+    {
+        var style = new StyleBoxFlat
+        {
+            BgColor = new Color(0.055f, 0.075f, 0.085f, 0.98f),
+            BorderColor = new Color(0.42f, 0.52f, 0.43f, 1.0f),
+            BorderWidthLeft = 2,
+            BorderWidthTop = 2,
+            BorderWidthRight = 2,
+            BorderWidthBottom = 2,
+            CornerRadiusTopLeft = 10,
+            CornerRadiusTopRight = 10,
+            CornerRadiusBottomLeft = 10,
+            CornerRadiusBottomRight = 10
+        };
+        style.ContentMarginLeft = 20;
+        style.ContentMarginTop = 18;
+        style.ContentMarginRight = 20;
+        style.ContentMarginBottom = 18;
+        return style;
     }
 
     private static Button CreateMenuButton(string text, Action onPressed)
@@ -667,11 +710,37 @@ public partial class Main : Node3D
         return terrain.Lerp(snow, snowAmount);
     }
 
+    private string GetTerrainName(int worldX, int worldZ)
+    {
+        float height = GetHeight(worldX, worldZ);
+        float slope = Mathf.Max(
+            Mathf.Abs(GetHeight(worldX + 1, worldZ) - GetHeight(worldX - 1, worldZ)),
+            Mathf.Abs(GetHeight(worldX, worldZ + 1) - GetHeight(worldX, worldZ - 1))) * 0.5f;
+        if (height >= 40.0f)
+            return "Schneegebirge";
+        if (height >= 35.0f || slope >= 2.1f)
+            return "Felsiges Hochland";
+
+        float biome = _biomeNoise.GetNoise2D(worldX, worldZ);
+        if (biome < -0.42f)
+            return "Trockenes Buschland";
+        if (biome < -0.18f)
+            return "Steppe";
+        if (biome > 0.48f)
+            return "Dichter Wald";
+        if (biome > 0.24f)
+            return "Blumenwiese";
+        return "Grasland";
+    }
+
     private float GetHeight(int worldX, int worldZ)
     {
         float noise = _terrainNoise.GetNoise2D(worldX, worldZ);
         float detail = _detailNoise.GetNoise2D(worldX, worldZ);
-        return 26.0f + noise * 12.0f + detail * 1.5f;
+        float ridgeField = _mountainNoise.GetNoise2D(worldX, worldZ);
+        float mountainMask = Mathf.Clamp((ridgeField + 0.18f) * 1.2f, 0.0f, 1.0f);
+        float ridges = Mathf.Pow(mountainMask, 1.7f) * 15.0f;
+        return 25.0f + noise * 9.5f + detail * 1.3f + ridges;
     }
 
     private Color GetGrassColor(int worldX, int worldZ)
@@ -694,6 +763,7 @@ public partial class Main : Node3D
         var random = new Random(treeSeed);
         var trunkTransforms = new List<Transform3D>[4];
         var leafTransforms = new List<Transform3D>[4];
+        var treeCollisionShapes = new List<CollisionShape3D>();
         for (int type = 0; type < 4; type++)
         {
             trunkTransforms[type] = new List<Transform3D>();
@@ -706,9 +776,6 @@ public partial class Main : Node3D
             int z = random.Next(1, ChunkSize - 1);
             float h = (heights[x, z] + heights[x + 1, z] + heights[x, z + 1] + heights[x + 1, z + 1]) * 0.25f;
 
-            if (random.NextDouble() > 0.48)
-                continue;
-
             if (Math.Abs(h - heights[x - 1, z]) > 1.5f ||
                 Math.Abs(h - heights[x + 1, z]) > 1.5f ||
                 Math.Abs(h - heights[x, z - 1]) > 1.5f ||
@@ -720,12 +787,38 @@ public partial class Main : Node3D
             int worldX = coordinate.X * ChunkSize + x;
             int worldZ = coordinate.Y * ChunkSize + z;
             float biome = _biomeNoise.GetNoise2D(worldX, worldZ);
+            double density = biome < -0.42f ? 0.10 : biome < -0.18f ? 0.20 :
+                biome > 0.48f ? 0.62 : biome > 0.24f ? 0.43 : 0.34;
+            float patch = _detailNoise.GetNoise2D(worldX * 0.18f, worldZ * 0.18f);
+            density *= Mathf.Lerp(0.45f, 1.35f, patch * 0.5f + 0.5f);
+            if (random.NextDouble() > density)
+                continue;
+
             int treeType = ChooseTreeType(biome, worldX, worldZ, random);
             float trunkHeight = treeType switch { 1 => 5.0f, 2 => 4.4f, 3 => 4.3f, _ => 3.4f };
+            float heightScale = 0.84f + (float)random.NextDouble() * 0.32f;
+            float actualTrunkHeight = trunkHeight * heightScale;
+            float leanX = ((float)random.NextDouble() - 0.5f) * 0.08f;
+            float leanZ = ((float)random.NextDouble() - 0.5f) * 0.08f;
+            Vector3 trunkPosition = new(px, h + actualTrunkHeight * 0.5f, pz);
             trunkTransforms[treeType].Add(new Transform3D(
-                Basis.Identity,
-                new Vector3(px, h + trunkHeight * 0.5f, pz)));
+                Basis.FromEuler(new Vector3(leanX, 0, leanZ)).Scaled(new Vector3(1.0f, heightScale, 1.0f)),
+                trunkPosition));
+            treeCollisionShapes.Add(new CollisionShape3D
+            {
+                Name = "TreeTrunkCollider",
+                Shape = new CylinderShape3D { Radius = 0.23f, Height = actualTrunkHeight },
+                Position = trunkPosition
+            });
             AddTreeCanopy(leafTransforms[treeType], treeType, new Vector3(px, h, pz), random);
+        }
+
+        if (treeCollisionShapes.Count > 0)
+        {
+            var treeCollision = new StaticBody3D { Name = "TreeCollisions", CollisionLayer = 1, CollisionMask = 1 };
+            foreach (CollisionShape3D shape in treeCollisionShapes)
+                treeCollision.AddChild(shape);
+            chunk.AddChild(treeCollision);
         }
 
         for (int type = 0; type < 4; type++)
@@ -784,21 +877,28 @@ public partial class Main : Node3D
     {
         var random = new Random(unchecked(WorldSeed ^ coordinate.X * 83492791 ^ coordinate.Y * 297121507));
         float biome = _biomeNoise.GetNoise2D(coordinate.X * ChunkSize + ChunkSize / 2, coordinate.Y * ChunkSize + ChunkSize / 2);
-        int desired = biome < -0.35f ? 30 : biome > 0.25f ? 90 : 65;
+        int desired = biome < -0.35f ? 36 : biome > 0.25f ? 92 : 72;
         var transforms = new List<Transform3D>(desired);
         var colors = new List<Color>(desired);
-        for (int i = 0; i < desired * 2 && transforms.Count < desired; i++)
+        int patchCount = (desired + 5) / 6;
+        for (int patch = 0; patch < patchCount && transforms.Count < desired; patch++)
         {
-            int x = random.Next(1, ChunkSize - 1);
-            int z = random.Next(1, ChunkSize - 1);
-            if (!IsPlantable(heights, x, z)) continue;
-            float px = x + (float)random.NextDouble();
-            float pz = z + (float)random.NextDouble();
-            float y = SampleTerrainHeight(heights, px, pz) + 0.015f;
-            float scale = 0.55f + (float)random.NextDouble() * 0.75f;
-            float angle = (float)random.NextDouble() * Mathf.Tau;
-            transforms.Add(new Transform3D(Basis.FromEuler(new Vector3(0, angle, 0)).Scaled(new Vector3(scale, scale, scale)), new Vector3(px, y, pz)));
-            colors.Add(new Color(0.78f + (float)random.NextDouble() * 0.4f, 0.82f + (float)random.NextDouble() * 0.3f, 0.72f + (float)random.NextDouble() * 0.35f));
+            int centerX = random.Next(2, ChunkSize - 2);
+            int centerZ = random.Next(2, ChunkSize - 2);
+            for (int blade = 0; blade < 12 && transforms.Count < desired; blade++)
+            {
+                int x = Mathf.Clamp(centerX + random.Next(-2, 3), 1, ChunkSize - 2);
+                int z = Mathf.Clamp(centerZ + random.Next(-2, 3), 1, ChunkSize - 2);
+                if (!IsPlantable(heights, x, z)) continue;
+                float px = x + (float)random.NextDouble();
+                float pz = z + (float)random.NextDouble();
+                float y = SampleTerrainHeight(heights, px, pz) + 0.015f;
+                float scale = 0.70f + (float)random.NextDouble() * 0.45f;
+                float angle = (float)random.NextDouble() * Mathf.Tau;
+                transforms.Add(new Transform3D(Basis.FromEuler(new Vector3(0, angle, 0)).Scaled(new Vector3(scale, scale, scale)), new Vector3(px, y, pz)));
+                float shade = (float)random.NextDouble() * 0.12f;
+                colors.Add(new Color(0.88f + shade, 0.91f + shade * 0.65f, 0.82f + shade));
+            }
         }
         AddColoredMultiMesh(chunk, "Grass", _grassMesh, _grassMaterial, transforms, colors);
     }
@@ -862,17 +962,36 @@ public partial class Main : Node3D
     {
         var surface = new SurfaceTool();
         surface.Begin(Mesh.PrimitiveType.Triangles);
-        AddGrassBlade(surface, new Vector3(-0.5f, 0, 0), new Vector3(0.5f, 0, 0), new Vector3(0.12f, 1, 0), new Color(0.82f, 0.95f, 0.70f));
-        AddGrassBlade(surface, new Vector3(0, 0, -0.5f), new Vector3(0, 0, 0.5f), new Vector3(0, 1, 0.12f), new Color(0.92f, 1.0f, 0.78f));
+        AddGrassBlade(surface, 0.05f, 0.38f, 0.070f, 0.10f);
+        AddGrassBlade(surface, 2.12f, 0.32f, 0.064f, 0.08f);
+        AddGrassBlade(surface, 4.20f, 0.35f, 0.068f, 0.11f);
         surface.GenerateNormals();
         return surface.Commit() as ArrayMesh;
     }
 
-    private static void AddGrassBlade(SurfaceTool surface, Vector3 a, Vector3 b, Vector3 tip, Color color)
+    private static void AddGrassBlade(SurfaceTool surface, float angle, float height, float width, float lean)
     {
-        surface.SetColor(color); surface.AddVertex(a);
-        surface.SetColor(color); surface.AddVertex(b);
-        surface.SetColor(color); surface.AddVertex(tip);
+        Vector3 forward = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
+        Vector3 side = new Vector3(-forward.Z, 0, forward.X) * (width * 0.5f);
+        Vector3 baseLeft = -side;
+        Vector3 baseRight = side;
+        Vector3 middle = forward * (lean * 0.45f) + Vector3.Up * (height * 0.56f);
+        Vector3 middleLeft = middle - side * 0.58f;
+        Vector3 middleRight = middle + side * 0.58f;
+        Vector3 tip = forward * lean + Vector3.Up * height;
+        Color baseColor = new(0.25f, 0.39f, 0.17f);
+        Color midColor = new(0.38f, 0.55f, 0.23f);
+        Color tipColor = new(0.53f, 0.66f, 0.32f);
+        AddGrassTriangle(surface, baseLeft, baseRight, middleLeft, baseColor, baseColor, midColor);
+        AddGrassTriangle(surface, baseRight, middleRight, middleLeft, baseColor, midColor, midColor);
+        AddGrassTriangle(surface, middleLeft, middleRight, tip, midColor, midColor, tipColor);
+    }
+
+    private static void AddGrassTriangle(SurfaceTool surface, Vector3 a, Vector3 b, Vector3 c, Color colorA, Color colorB, Color colorC)
+    {
+        surface.SetColor(colorA); surface.AddVertex(a);
+        surface.SetColor(colorB); surface.AddVertex(b);
+        surface.SetColor(colorC); surface.AddVertex(c);
     }
 
     private static ArrayMesh CreateFlowerPetalMesh()

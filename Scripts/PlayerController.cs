@@ -12,6 +12,7 @@ public partial class PlayerController : CharacterBody3D
 
     public override void _Ready()
     {
+        ProcessMode = ProcessModeEnum.Pausable;
         Name = "Player";
 
         var collider = new CollisionShape3D
