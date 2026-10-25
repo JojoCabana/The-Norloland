@@ -114,21 +114,25 @@ public partial class Main : Node3D
             Roughness = 1.0f,
             CullMode = BaseMaterial3D.CullModeEnum.Disabled
         };
-        _terrainMaterial.AlbedoTexture = CreateGroundTexture();
+        _terrainMaterial.AlbedoTexture = GD.Load<Texture2D>("res://Assets/Textures/forest_floor.png") ?? CreateGroundTexture();
+        _terrainMaterial.Uv1Scale = new Vector3(0.16f, 1.0f, 0.16f);
+
+        Texture2D barkTexture = GD.Load<Texture2D>("res://Assets/Textures/tree_bark.png") ?? CreateBarkTexture();
+        Texture2D foliageTexture = GD.Load<Texture2D>("res://Assets/Textures/forest_leaves.png");
 
         _trunkMaterials = new[]
         {
-            CreateMaterial(new Color(0.72f, 0.61f, 0.42f), CreateBarkTexture()),
-            CreateMaterial(new Color(0.52f, 0.39f, 0.25f), CreateBarkTexture()),
-            CreateMaterial(new Color(0.88f, 0.84f, 0.70f), CreateBarkTexture()),
-            CreateMaterial(new Color(0.76f, 0.58f, 0.34f), CreateBarkTexture())
+            CreateMaterial(new Color(0.92f, 0.88f, 0.78f), barkTexture),
+            CreateMaterial(new Color(0.70f, 0.61f, 0.50f), barkTexture),
+            CreateMaterial(new Color(1.0f, 0.98f, 0.91f), barkTexture),
+            CreateMaterial(new Color(0.90f, 0.78f, 0.58f), barkTexture)
         };
         _leavesMaterials = new[]
         {
-            CreateMaterial(new Color(0.16f, 0.34f, 0.13f)),
-            CreateMaterial(new Color(0.10f, 0.25f, 0.12f)),
-            CreateMaterial(new Color(0.27f, 0.39f, 0.17f)),
-            CreateMaterial(new Color(0.34f, 0.39f, 0.15f))
+            CreateMaterial(Colors.White, foliageTexture),
+            CreateMaterial(new Color(0.83f, 0.91f, 0.78f), foliageTexture),
+            CreateMaterial(new Color(0.88f, 0.94f, 0.80f), foliageTexture),
+            CreateMaterial(new Color(0.93f, 0.91f, 0.73f), foliageTexture)
         };
         foreach (StandardMaterial3D material in _leavesMaterials)
             material.VertexColorUseAsAlbedo = true;
@@ -137,6 +141,8 @@ public partial class Main : Node3D
         _grassMaterial.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
         _grassMaterial.VertexColorUseAsAlbedo = true;
         _shrubMaterial = CreateMaterial(Colors.White);
+        _shrubMaterial.AlbedoTexture = foliageTexture;
+        _shrubMaterial.Uv1Scale = new Vector3(0.45f, 0.45f, 1.0f);
         _shrubMaterial.VertexColorUseAsAlbedo = true;
         _shrubMaterial.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
         _shrubTwigMaterial = CreateMaterial(new Color(0.27f, 0.22f, 0.13f));
@@ -261,7 +267,9 @@ public partial class Main : Node3D
         {
             AlbedoColor = color,
             AlbedoTexture = texture,
-            Roughness = 1.0f
+            Roughness = 1.0f,
+            TextureRepeat = true,
+            TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmaps
         };
     }
 
@@ -777,14 +785,14 @@ public partial class Main : Node3D
     {
         float biome = _biomeNoise.GetNoise2D(worldX, worldZ);
         if (biome < -0.42f)
-            return new Color(0.49f, 0.40f, 0.25f); // dry scrub
+            return new Color(0.92f, 0.80f, 0.58f); // dry scrub
         if (biome < -0.18f)
-            return new Color(0.43f, 0.42f, 0.24f); // steppe
+            return new Color(0.84f, 0.83f, 0.59f); // steppe
         if (biome > 0.48f)
-            return new Color(0.17f, 0.31f, 0.13f); // dense forest
+            return new Color(0.74f, 0.84f, 0.68f); // dense forest
         if (biome > 0.24f)
-            return new Color(0.25f, 0.39f, 0.18f); // meadow
-        return new Color(0.31f, 0.44f, 0.21f); // grassland
+            return new Color(0.83f, 0.92f, 0.71f); // meadow
+        return new Color(0.89f, 0.94f, 0.77f); // grassland
     }
 
     private void AddTrees(Node3D chunk, Vector2I coordinate, float[,] heights)
@@ -1055,19 +1063,33 @@ public partial class Main : Node3D
         Vector3 center = new(0, 0.46f, 0.075f);
         Vector3 tip = new(0, 1.0f, 0.0f);
         Vector3 right = new(0.48f, 0.40f, 0.015f);
-        Color baseColor = new(0.22f, 0.34f, 0.12f);
-        Color edgeColor = new(0.31f, 0.47f, 0.16f);
-        Color tipColor = new(0.38f, 0.53f, 0.20f);
-        AddGrassTriangle(surface, basePoint, left, center, baseColor, edgeColor, baseColor);
-        AddGrassTriangle(surface, left, tip, center, edgeColor, tipColor, baseColor);
-        AddGrassTriangle(surface, tip, right, center, tipColor, edgeColor, baseColor);
-        AddGrassTriangle(surface, right, basePoint, center, edgeColor, baseColor, baseColor);
-        AddGrassTriangle(surface, center, left, basePoint, baseColor, edgeColor, baseColor);
-        AddGrassTriangle(surface, center, tip, left, baseColor, tipColor, edgeColor);
-        AddGrassTriangle(surface, center, right, tip, baseColor, edgeColor, tipColor);
-        AddGrassTriangle(surface, center, basePoint, right, baseColor, baseColor, edgeColor);
+        Color baseColor = new(0.78f, 0.87f, 0.68f);
+        Color edgeColor = new(0.87f, 0.94f, 0.76f);
+        Color tipColor = new(0.93f, 0.98f, 0.83f);
+        AddLeafTriangle(surface, basePoint, left, center, baseColor, edgeColor, baseColor);
+        AddLeafTriangle(surface, left, tip, center, edgeColor, tipColor, baseColor);
+        AddLeafTriangle(surface, tip, right, center, tipColor, edgeColor, baseColor);
+        AddLeafTriangle(surface, right, basePoint, center, edgeColor, baseColor, baseColor);
+        AddLeafTriangle(surface, center, left, basePoint, baseColor, edgeColor, baseColor);
+        AddLeafTriangle(surface, center, tip, left, baseColor, tipColor, edgeColor);
+        AddLeafTriangle(surface, center, right, tip, baseColor, edgeColor, tipColor);
+        AddLeafTriangle(surface, center, basePoint, right, baseColor, baseColor, edgeColor);
         surface.GenerateNormals();
         return surface.Commit() as ArrayMesh;
+    }
+
+    private static void AddLeafTriangle(SurfaceTool surface, Vector3 a, Vector3 b, Vector3 c, Color colorA, Color colorB, Color colorC)
+    {
+        AddLeafVertex(surface, a, colorA);
+        AddLeafVertex(surface, b, colorB);
+        AddLeafVertex(surface, c, colorC);
+    }
+
+    private static void AddLeafVertex(SurfaceTool surface, Vector3 position, Color color)
+    {
+        surface.SetUV(new Vector2(position.X + 0.5f, position.Y));
+        surface.SetColor(color);
+        surface.AddVertex(position);
     }
 
     private static ArrayMesh CreateGrassMesh(float heightScale = 1.0f, float widthScale = 1.0f)
