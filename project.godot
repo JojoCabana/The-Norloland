@@ -1,0 +1,26 @@
+; Engine configuration file.
+; The Norloland - Godot 4 .NET prototype
+
+config_version=5
+
+[application]
+
+config/name="The Norloland"
+run/main_scene="res://Scenes/Main.tscn"
+config/description="A procedural, single-player-first voxel open-world prototype."
+
+[dotnet]
+
+project/assembly_name="TheNorloland"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.48, 0.66, 0.78, 1)
