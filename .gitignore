@@ -1,0 +1,18 @@
+# Godot generated files
+.godot/
+.import/
+.export/
+mono/
+bin/
+obj/
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+*.sln
+*.csproj.user
+
+# Export output
+build/
+exports/
