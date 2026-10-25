@@ -130,6 +130,8 @@ public partial class Main : Node3D
             CreateMaterial(new Color(0.27f, 0.39f, 0.17f)),
             CreateMaterial(new Color(0.34f, 0.39f, 0.15f))
         };
+        foreach (StandardMaterial3D material in _leavesMaterials)
+            material.VertexColorUseAsAlbedo = true;
 
         _grassMaterial = CreateMaterial(Colors.White);
         _grassMaterial.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
@@ -791,11 +793,13 @@ public partial class Main : Node3D
         var random = new Random(treeSeed);
         var trunkTransforms = new List<Transform3D>[4];
         var leafTransforms = new List<Transform3D>[4];
+        var leafColors = new List<Color>[4];
         var treeCollisionShapes = new List<CollisionShape3D>();
         for (int type = 0; type < 4; type++)
         {
             trunkTransforms[type] = new List<Transform3D>();
             leafTransforms[type] = new List<Transform3D>();
+            leafColors[type] = new List<Color>();
         }
 
         for (int attempt = 0; attempt < 24; attempt++)
@@ -824,21 +828,25 @@ public partial class Main : Node3D
 
             int treeType = ChooseTreeType(biome, worldX, worldZ, random);
             float trunkHeight = treeType switch { 1 => 5.0f, 2 => 4.4f, 3 => 4.3f, _ => 3.4f };
-            float heightScale = 0.84f + (float)random.NextDouble() * 0.32f;
-            float actualTrunkHeight = trunkHeight * heightScale;
+            float matureScale = treeType == 3
+                ? 1.28f + (float)random.NextDouble() * 0.32f
+                : 1.65f + (float)random.NextDouble() * 0.45f;
+            float heightScale = 0.90f + (float)random.NextDouble() * 0.20f;
+            float actualTrunkHeight = trunkHeight * matureScale * heightScale;
+            float trunkThickness = 0.92f + matureScale * 0.26f;
             float leanX = ((float)random.NextDouble() - 0.5f) * 0.08f;
             float leanZ = ((float)random.NextDouble() - 0.5f) * 0.08f;
             Vector3 trunkPosition = new(px, h + actualTrunkHeight * 0.5f, pz);
             trunkTransforms[treeType].Add(new Transform3D(
-                Basis.FromEuler(new Vector3(leanX, 0, leanZ)).Scaled(new Vector3(1.0f, heightScale, 1.0f)),
+                Basis.FromEuler(new Vector3(leanX, 0, leanZ)).Scaled(new Vector3(trunkThickness, matureScale * heightScale, trunkThickness)),
                 trunkPosition));
             treeCollisionShapes.Add(new CollisionShape3D
             {
                 Name = "TreeTrunkCollider",
-                Shape = new CylinderShape3D { Radius = 0.23f, Height = actualTrunkHeight },
+                Shape = new CylinderShape3D { Radius = 0.23f * trunkThickness, Height = actualTrunkHeight },
                 Position = trunkPosition
             });
-            AddTreeCanopy(leafTransforms[treeType], treeType, new Vector3(px, h, pz), random);
+            AddTreeCanopy(leafTransforms[treeType], leafColors[treeType], treeType, new Vector3(px, h, pz), matureScale, random);
         }
 
         if (treeCollisionShapes.Count > 0)
@@ -850,7 +858,7 @@ public partial class Main : Node3D
         }
 
         for (int type = 0; type < 4; type++)
-            AddTreeInstances(chunk, type, trunkTransforms[type], leafTransforms[type]);
+            AddTreeInstances(chunk, type, trunkTransforms[type], leafTransforms[type], leafColors[type]);
     }
 
     private int ChooseTreeType(float biome, int worldX, int worldZ, Random random)
@@ -950,20 +958,27 @@ public partial class Main : Node3D
         var stems = new List<Transform3D>();
         var petals = new List<Transform3D>[] { new(), new(), new() };
         var centers = new List<Transform3D>();
-        for (int i = 0; i < desired * 4 && stems.Count < desired; i++)
+        int patchCount = (desired + 3) / 4;
+        for (int patch = 0; patch < patchCount && stems.Count < desired; patch++)
         {
-            int x = random.Next(1, ChunkSize - 1);
-            int z = random.Next(1, ChunkSize - 1);
-            if (!IsPlantable(heights, x, z) || random.NextDouble() < 0.45) continue;
-            float px = x + (float)random.NextDouble();
-            float pz = z + (float)random.NextDouble();
-            float y = SampleTerrainHeight(heights, px, pz);
-            float height = 0.32f + (float)random.NextDouble() * 0.30f;
-            stems.Add(new Transform3D(Basis.FromScale(new Vector3(0.035f, height, 0.035f)), new Vector3(px, y + height * 0.5f, pz)));
-            int color = random.Next(0, petals.Length);
-            float size = 0.10f + (float)random.NextDouble() * 0.07f;
-            petals[color].Add(new Transform3D(Basis.FromScale(new Vector3(size, size, size)), new Vector3(px, y + height, pz)));
-            centers.Add(new Transform3D(Basis.FromScale(new Vector3(size * 0.36f, size * 0.36f, size * 0.36f)), new Vector3(px, y + height + 0.015f, pz)));
+            int centerX = random.Next(2, ChunkSize - 2);
+            int centerZ = random.Next(2, ChunkSize - 2);
+            int patchColor = random.Next(0, petals.Length);
+            for (int flower = 0; flower < 8 && stems.Count < desired; flower++)
+            {
+                int x = Mathf.Clamp(centerX + random.Next(-2, 3), 1, ChunkSize - 2);
+                int z = Mathf.Clamp(centerZ + random.Next(-2, 3), 1, ChunkSize - 2);
+                if (!IsPlantable(heights, x, z) || random.NextDouble() < 0.20) continue;
+                float px = x + (float)random.NextDouble();
+                float pz = z + (float)random.NextDouble();
+                float y = SampleTerrainHeight(heights, px, pz);
+                float height = 0.32f + (float)random.NextDouble() * 0.30f;
+                stems.Add(new Transform3D(Basis.FromScale(new Vector3(0.035f, height, 0.035f)), new Vector3(px, y + height * 0.5f, pz)));
+                int color = random.NextDouble() < 0.82 ? patchColor : random.Next(0, petals.Length);
+                float size = 0.10f + (float)random.NextDouble() * 0.07f;
+                petals[color].Add(new Transform3D(Basis.FromScale(new Vector3(size, size, size)), new Vector3(px, y + height, pz)));
+                centers.Add(new Transform3D(Basis.FromScale(new Vector3(size * 0.36f, size * 0.36f, size * 0.36f)), new Vector3(px, y + height + 0.015f, pz)));
+            }
         }
         AddMultiMesh(chunk, "FlowerStems", new CylinderMesh { TopRadius = 0.5f, BottomRadius = 0.5f, Height = 1.0f, RadialSegments = 5 }, _flowerStemMaterial, stems);
         for (int c = 0; c < petals.Length; c++) AddMultiMesh(chunk, "FlowerPetals_" + c, _flowerPetalMesh, _flowerMaterials[c], petals[c]);
@@ -1123,7 +1138,7 @@ public partial class Main : Node3D
         chunk.AddChild(new MultiMeshInstance3D { Name = name, Multimesh = multimesh, MaterialOverride = material });
     }
 
-    private static void AddTreeCanopy(List<Transform3D> transforms, int type, Vector3 origin, Random random)
+    private static void AddTreeCanopy(List<Transform3D> transforms, List<Color> colors, int type, Vector3 origin, float matureScale, Random random)
     {
         Vector3[] offsets;
         Vector3[] scales;
@@ -1191,18 +1206,20 @@ public partial class Main : Node3D
 
         for (int i = 0; i < offsets.Length; i++)
         {
-            Vector3 scale = scales[i] * (0.88f + (float)random.NextDouble() * 0.24f);
+            Vector3 scale = scales[i] * matureScale * (0.88f + (float)random.NextDouble() * 0.24f);
             Vector3 jitter = new(
-                ((float)random.NextDouble() - 0.5f) * 0.24f,
-                ((float)random.NextDouble() - 0.5f) * 0.16f,
-                ((float)random.NextDouble() - 0.5f) * 0.24f);
+                ((float)random.NextDouble() - 0.5f) * 0.24f * matureScale,
+                ((float)random.NextDouble() - 0.5f) * 0.16f * matureScale,
+                ((float)random.NextDouble() - 0.5f) * 0.24f * matureScale);
             transforms.Add(new Transform3D(
                 Basis.FromScale(scale),
-                origin + offsets[i] + jitter));
+                origin + offsets[i] * matureScale + jitter));
+            float shade = 0.84f + (float)random.NextDouble() * 0.25f;
+            colors.Add(new Color(shade, shade * (0.96f + (float)random.NextDouble() * 0.08f), shade * 0.93f));
         }
     }
 
-    private void AddTreeInstances(Node3D chunk, int type, List<Transform3D> trunks, List<Transform3D> leaves)
+    private void AddTreeInstances(Node3D chunk, int type, List<Transform3D> trunks, List<Transform3D> leaves, List<Color> leafColors)
     {
         if (trunks.Count == 0)
             return;
@@ -1235,22 +1252,9 @@ public partial class Main : Node3D
         {
             Radius = 1.0f,
             Height = 2.0f,
-            RadialSegments = 12,
-            Rings = 8
+            RadialSegments = 18,
+            Rings = 12
         };
-        var leafMultiMesh = new MultiMesh
-        {
-            TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
-            Mesh = leafMesh,
-            InstanceCount = leaves.Count
-        };
-        for (int i = 0; i < leaves.Count; i++)
-            leafMultiMesh.SetInstanceTransform(i, leaves[i]);
-        chunk.AddChild(new MultiMeshInstance3D
-        {
-            Name = $"TreeCanopies_{type}",
-            Multimesh = leafMultiMesh,
-            MaterialOverride = _leavesMaterials[type]
-        });
+        AddColoredMultiMesh(chunk, $"TreeCanopies_{type}", leafMesh, _leavesMaterials[type], leaves, leafColors);
     }
 }
