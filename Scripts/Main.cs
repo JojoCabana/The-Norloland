@@ -1118,7 +1118,12 @@ public partial class Main : Node3D
             float pz = z + (float)random.NextDouble();
             float y = SampleTerrainHeight(heights, px, pz);
             var bush = new GrowingBush { Name = $"GrowingBush_{i}" };
-            bush.Configure(unchecked(WorldSeed ^ coordinate.X * 73856093 ^ coordinate.Y * 19349663 ^ i * 83492791), biome);
+            int worldX = coordinate.X * ChunkSize + x;
+            int worldZ = coordinate.Y * ChunkSize + z;
+            bush.Configure(
+                unchecked(WorldSeed ^ coordinate.X * 73856093 ^ coordinate.Y * 19349663 ^ i * 83492791),
+                biome,
+                $"{WorldSeed}:bush:{worldX}:{worldZ}:{i}");
             bush.Position = new Vector3(px, y, pz);
             chunk.AddChild(bush);
         }
@@ -1135,18 +1140,27 @@ public partial class Main : Node3D
             if (!IsPlantable(heights, x, z)) continue;
             int roll = random.Next(100);
             string kind = roll < 42 ? "small_stone" : roll < 91 ? "medium_stone" : "large_stone";
+            string persistentId = $"{WorldSeed}:loose:{coordinate.X}:{coordinate.Y}:{i}";
+            if (SurvivalGameplay.IsResourceConsumed(persistentId))
+            {
+                random.NextDouble(); // Match the per-stone visual variation draw to preserve later chunk randomness.
+                continue;
+            }
             float size = kind switch { "small_stone" => 0.12f, "medium_stone" => 0.19f, _ => 0.27f };
             float px = x + (float)random.NextDouble();
             float pz = z + (float)random.NextDouble();
             float y = SampleTerrainHeight(heights, px, pz);
             var stone = CreateResourceNode(kind, size, 1, random);
             stone.Name = "LooseStone_" + i;
+            stone.PersistentId = persistentId;
             stone.Position = new Vector3(px, y + size * 0.35f, pz);
             chunk.AddChild(stone);
         }
 
         if (random.NextDouble() < 0.16)
         {
+            string persistentId = $"{WorldSeed}:deposit:{coordinate.X}:{coordinate.Y}";
+            if (SurvivalGameplay.IsResourceConsumed(persistentId)) return;
             int x = random.Next(2, ChunkSize - 2);
             int z = random.Next(2, ChunkSize - 2);
             if (IsPlantable(heights, x, z))
@@ -1156,6 +1170,7 @@ public partial class Main : Node3D
                 float y = SampleTerrainHeight(heights, px, pz);
                 var deposit = CreateResourceNode("stone_deposit", 0.62f, 5, random);
                 deposit.Name = "StoneDeposit";
+                deposit.PersistentId = persistentId;
                 deposit.Position = new Vector3(px, y + 0.25f, pz);
                 chunk.AddChild(deposit);
             }

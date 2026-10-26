@@ -4,6 +4,7 @@ using System.Collections.Generic;
 
 public partial class SurvivalGameplay : Node
 {
+    private static readonly HashSet<string> ConsumedResources = new();
     private Main _main = null!;
     private PlayerController _player = null!;
     private Camera3D _camera = null!;
@@ -25,6 +26,15 @@ public partial class SurvivalGameplay : Node
     private bool _hasPickaxe;
 
     public bool CraftingVisible => _craftPanel != null && _craftPanel.Visible;
+
+    public static bool IsResourceConsumed(string persistentId)
+        => !string.IsNullOrEmpty(persistentId) && ConsumedResources.Contains(persistentId);
+
+    private static void MarkResourceConsumed(string persistentId)
+    {
+        if (!string.IsNullOrEmpty(persistentId))
+            ConsumedResources.Add(persistentId);
+    }
 
     public void Initialize(Main main, PlayerController player)
     {
@@ -241,6 +251,7 @@ public partial class SurvivalGameplay : Node
                 case "medium_stone": _mediumStone++; break;
                 case "large_stone": _largeStone++; break;
             }
+            MarkResourceConsumed(resource.PersistentId);
             resource.QueueFree();
             _hintLabel.Text = "Stein aufgehoben.";
             RefreshInventoryText();
@@ -276,6 +287,7 @@ public partial class SurvivalGameplay : Node
                 {
                     _mediumStone += 2;
                     _smallStone++;
+                    MarkResourceConsumed(resource.PersistentId);
                     resource.QueueFree();
                     _hintLabel.Text = "Du gewinnst zwei mittlere Steine und einen Schlagstein.";
                     RefreshInventoryText();

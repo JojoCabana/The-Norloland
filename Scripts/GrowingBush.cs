@@ -6,14 +6,18 @@ public partial class GrowingBush : Node3D
 {
     private const float MatureHeight = 1.6f;
     private const float GrowthSeconds = 1800.0f;
+    private static readonly Dictionary<string, float> SavedGrowth = new();
     private float _growth;
+    private float _growthSaveTimer;
     private Node3D _visual = null!;
     private Color _biomeTint = Colors.White;
     private int _seed;
+    private string _persistentId = "";
 
-    public void Configure(int seed, float biome)
+    public void Configure(int seed, float biome, string persistentId)
     {
         _seed = seed;
+        _persistentId = persistentId;
         _biomeTint = biome < -0.25f ? new Color(0.92f, 0.85f, 0.68f) :
             biome > 0.4f ? new Color(0.78f, 0.92f, 0.73f) : new Color(0.88f, 0.96f, 0.79f);
     }
@@ -21,6 +25,7 @@ public partial class GrowingBush : Node3D
     public override void _Ready()
     {
         ProcessMode = ProcessModeEnum.Pausable;
+        SavedGrowth.TryGetValue(_persistentId, out _growth);
         BuildVisual();
         UpdateGrowthScale();
     }
@@ -30,6 +35,12 @@ public partial class GrowingBush : Node3D
         if (_growth >= 1.0f)
             return;
         _growth = Mathf.Min(1.0f, _growth + (float)delta / GrowthSeconds);
+        _growthSaveTimer += (float)delta;
+        if (_growthSaveTimer >= 1.0f)
+        {
+            SavedGrowth[_persistentId] = _growth;
+            _growthSaveTimer = 0.0f;
+        }
         UpdateGrowthScale();
     }
 
@@ -37,6 +48,7 @@ public partial class GrowingBush : Node3D
     {
         int sticks = 1 + Mathf.RoundToInt(_growth * 3.0f);
         _growth = 0.0f;
+        SavedGrowth[_persistentId] = _growth;
         UpdateGrowthScale();
         return sticks;
     }
