@@ -15,6 +15,8 @@ public partial class SurvivalGameplay : Node
     private Label _targetPrompt = null!;
     private ColorRect _craftBackdrop = null!;
     private PanelContainer _craftPanel = null!;
+    private PanelContainer _buildBookPanel = null!;
+    private GridContainer _itemGrid = null!;
     private bool _miningHeld;
     private float _mineProgress;
     private string _currentTool = "Hand";
@@ -24,6 +26,8 @@ public partial class SurvivalGameplay : Node
     private int _sticks;
     private int _dirt;
     private int _stoneBlocks;
+    private int _wood;
+    private int _saplings;
     private bool _hasAxe;
     private bool _hasShovel;
     private bool _hasPickaxe;
@@ -101,6 +105,7 @@ public partial class SurvivalGameplay : Node
             _targetPrompt.Text = resource.ResourceKind switch
             {
                 "bush" => "E · Stöcke sammeln",
+                "tree" => _hasAxe ? "Linksklick halten · Baum fällen" : "Baum · Axt nötig",
                 "stone_deposit" => _hasPickaxe ? "Linksklick halten · Fels abbauen" : "Fels · Spitzhacke nötig",
                 _ => "E · Aufheben"
             };
@@ -144,6 +149,18 @@ public partial class SurvivalGameplay : Node
             HideCraftingMenu();
         else
             ShowCraftingMenu();
+    }
+
+    private void ShowBuildBook()
+    {
+        _buildBookPanel.Visible = true;
+        _craftPanel.Visible = false;
+    }
+
+    private void HideBuildBook()
+    {
+        _buildBookPanel.Visible = false;
+        _craftPanel.Visible = true;
     }
 
     private void CreateInterface()
@@ -231,6 +248,15 @@ public partial class SurvivalGameplay : Node
         layer.AddChild(center);
         center.AddChild(_craftPanel);
 
+        _buildBookPanel = new PanelContainer
+        {
+            Visible = false,
+            CustomMinimumSize = new Vector2(500, 0)
+        };
+        _buildBookPanel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.Center);
+        _buildBookPanel.AddThemeStyleboxOverride("panel", panelStyle);
+        center.AddChild(_buildBookPanel);
+
         var content = new VBoxContainer();
         content.AddThemeConstantOverride("separation", 8);
         _craftPanel.AddChild(content);
@@ -239,6 +265,8 @@ public partial class SurvivalGameplay : Node
         content.AddChild(title);
         _craftInventory = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
         content.AddChild(_craftInventory);
+        _itemGrid = new GridContainer { Columns = 2 };
+        content.AddChild(_itemGrid);
         content.AddChild(new Label
         {
             Text = "Abgebaute Erde und Steinblöcke landen hier im Inventar.\nAxt und Schaufel: je 1 Stock + 1 mittlerer Stein + 1 Schlagstein.\nSpitzhacke: 1 Stock + 1 großer Stein + 1 Schlagstein.",
@@ -248,11 +276,22 @@ public partial class SurvivalGameplay : Node
         content.AddChild(CreateCraftButton("Steinschaufel herstellen", () => CraftTool("shovel")));
         content.AddChild(CreateCraftButton("Steinspitzhacke herstellen", () => CraftTool("pickaxe")));
         content.AddChild(CreateCraftButton("Großen Stein in 2 mittlere spalten", SplitLargeStone));
+        content.AddChild(CreateCraftButton("Baubuch öffnen", ShowBuildBook));
         content.AddChild(CreateCraftButton("Schließen  ·  I / Esc", HideCraftingMenu));
+
+        var book = new VBoxContainer();
+        book.AddThemeConstantOverride("separation", 10);
+        _buildBookPanel.AddChild(book);
+        var bookTitle = new Label { Text = "BAUBUCH", HorizontalAlignment = HorizontalAlignment.Center };
+        bookTitle.AddThemeFontSizeOverride("font_size", 24);
+        book.AddChild(bookTitle);
+        book.AddChild(new Label { Text = "Holz und Steine werden als Baumaterial gesammelt.\n\nFreigeschaltete Baupläne:\n• Einfaches Holzlager  ·  4 Holz\n• Feuerstelle  ·  3 Holz + 2 Steine\n• Kleiner Unterstand  ·  8 Holz + 2 Setzlinge\n\nDie Bauplätze werden im nächsten Schritt an der Mitte des Fadenkreuzes platziert.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+        book.AddChild(CreateCraftButton("Zurück zum Inventar", HideBuildBook));
         AddChild(layer);
 
         _craftBackdrop.ZIndex = 1;
         center.ZIndex = 2;
+        _buildBookPanel.ZIndex = 2;
         _statusLabel.ZIndex = 0;
         _hintLabel.ZIndex = 0;
         centerHud.ZIndex = 0;
@@ -273,9 +312,25 @@ public partial class SurvivalGameplay : Node
     private void RefreshInventoryText()
     {
         if (_craftInventory != null)
-            _craftInventory.Text = $"Stöcke: {_sticks}   Schlagsteine: {_smallStone}\nMittlere Steine: {_mediumStone}   Große Steine: {_largeStone}\nErde: {_dirt}   Steinblöcke: {_stoneBlocks}\nWerkzeuge: {(_hasAxe ? "Axt " : "")}{(_hasShovel ? "Schaufel " : "")}{(_hasPickaxe ? "Spitzhacke" : "Noch keine")}";
+            _craftInventory.Text = $"Holz: {_wood}   Setzlinge: {_saplings}\nStöcke: {_sticks}   Schlagsteine: {_smallStone}\nMittlere Steine: {_mediumStone}   Große Steine: {_largeStone}\nErde: {_dirt}   Steinblöcke: {_stoneBlocks}\nWerkzeuge: {(_hasAxe ? "Axt " : "")}{(_hasShovel ? "Schaufel " : "")}{(_hasPickaxe ? "Spitzhacke" : "Noch keine")}";
+        if (_itemGrid != null)
+        {
+            foreach (Node child in _itemGrid.GetChildren()) child.QueueFree();
+            _itemGrid.AddChild(CreateItemSlot("Holz", _wood, new Color(0.40f, 0.22f, 0.10f)));
+            _itemGrid.AddChild(CreateItemSlot("Setzlinge", _saplings, new Color(0.24f, 0.52f, 0.18f)));
+            _itemGrid.AddChild(CreateItemSlot("Steine", _smallStone + _mediumStone + _largeStone, new Color(0.45f, 0.47f, 0.45f)));
+            _itemGrid.AddChild(CreateItemSlot("Erde", _dirt, new Color(0.30f, 0.18f, 0.10f)));
+        }
         if (_statusLabel != null)
             _statusLabel.Text = $"Werkzeug: {_currentTool}  (1 Hand · 2 Schaufel · 3 Spitzhacke · 4 Axt)\nStöcke {_sticks}  |  Schlagsteine {_smallStone}  |  mittlere Steine {_mediumStone}  |  große Steine {_largeStone}";
+    }
+
+    private static Control CreateItemSlot(string name, int count, Color color)
+    {
+        var row = new HBoxContainer { CustomMinimumSize = new Vector2(220, 34) };
+        row.AddChild(new ColorRect { Color = color, CustomMinimumSize = new Vector2(28, 28), MouseFilter = Control.MouseFilterEnum.Ignore });
+        row.AddChild(new Label { Text = $"  {name}  × {count}", VerticalAlignment = VerticalAlignment.Center });
+        return row;
     }
 
     private void SelectTool(string tool)
@@ -314,6 +369,21 @@ public partial class SurvivalGameplay : Node
             _hintLabel.Text = $"Du sammelst {amount} Stock/Äste. Die Triebe wachsen langsam nach.";
             RefreshInventoryText();
         }
+        else if (resource.ResourceKind == "tree")
+        {
+            if (!_hasAxe || _currentTool != "Axe")
+            {
+                _hintLabel.Text = "Zum Fällen brauchst du eine Axt und musst sie mit 4 auswählen.";
+                return;
+            }
+            int wood = 2 + resource.HitPoints;
+            _wood += wood;
+            _saplings++;
+            MarkResourceConsumed(resource.PersistentId);
+            resource.QueueFree();
+            _hintLabel.Text = $"Baum gefällt: +{wood} Holz, +1 Setzling.";
+            RefreshInventoryText();
+        }
         else if (resource.ResourceKind.StartsWith("small_stone", StringComparison.Ordinal) ||
                  resource.ResourceKind.StartsWith("medium_stone", StringComparison.Ordinal) ||
                  resource.ResourceKind.StartsWith("large_stone", StringComparison.Ordinal))
@@ -341,6 +411,32 @@ public partial class SurvivalGameplay : Node
         }
 
         ResourceNode resource = GetResourceNode(hit);
+        if (resource != null && resource.ResourceKind == "tree" && (!_hasAxe || _currentTool != "Axe"))
+        {
+            _hintLabel.Text = "Zum Fällen brauchst du eine Axt und musst sie mit 4 auswählen.";
+            return;
+        }
+        if (resource != null && resource.ResourceKind == "tree")
+        {
+            _mineProgress += delta;
+            const float required = 1.0f;
+            _hintLabel.Text = $"Baum fällen  [{Mathf.Clamp(_mineProgress / required * 100.0f, 0, 100):F0}%]";
+            if (_mineProgress >= required)
+            {
+                _mineProgress = 0.0f;
+                resource.HitPoints--;
+                if (resource.HitPoints <= 0)
+                {
+                    _wood += 6;
+                    _saplings++;
+                    MarkResourceConsumed(resource.PersistentId);
+                    resource.QueueFree();
+                    _hintLabel.Text = "+6 Holz, +1 Setzling im Inventar.";
+                    RefreshInventoryText();
+                }
+            }
+            return;
+        }
         if (resource != null && resource.ResourceKind == "stone_deposit")
         {
             if (!_hasPickaxe || _currentTool != "Pickaxe")

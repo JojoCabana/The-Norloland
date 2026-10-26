@@ -37,6 +37,7 @@ public partial class Main : Node3D
     private SurvivalGameplay _survival = null!;
     private Vector2I _lastCenter = new(int.MinValue, int.MinValue);
     private StandardMaterial3D _terrainMaterial = null!;
+    private ImageTexture _soilTexture = null!;
     private StandardMaterial3D[] _trunkMaterials = null!;
     private StandardMaterial3D[] _leavesMaterials = null!;
     private StandardMaterial3D _grassMaterial = null!;
@@ -122,6 +123,7 @@ public partial class Main : Node3D
         };
         _terrainMaterial.AlbedoTexture = GD.Load<Texture2D>("res://Assets/Textures/forest_floor.png") ?? CreateGroundTexture();
         _terrainMaterial.Uv1Scale = new Vector3(0.16f, 1.0f, 0.16f);
+        _soilTexture = CreateSoilTexture();
 
         Texture2D barkTexture = GD.Load<Texture2D>("res://Assets/Textures/tree_bark.png") ?? CreateBarkTexture();
         Texture2D foliageTexture = GD.Load<Texture2D>("res://Assets/Textures/forest_leaves.png");
@@ -834,6 +836,21 @@ public partial class Main : Node3D
         return ImageTexture.CreateFromImage(image);
     }
 
+    private ImageTexture CreateSoilTexture()
+    {
+        const int size = 128;
+        var image = Image.CreateEmpty(size, size, false, Image.Format.Rgba8);
+        var random = new Random(WorldSeed ^ 0x13579BDF);
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+        {
+            float grain = (float)random.NextDouble() * 0.10f;
+            float damp = Mathf.Sin(x * 0.17f + y * 0.11f) * 0.035f;
+            image.SetPixel(x, y, new Color(0.25f + grain + damp, 0.145f + grain * 0.55f, 0.075f + grain * 0.28f, 1));
+        }
+        return ImageTexture.CreateFromImage(image);
+    }
+
     private static float[,] CreateNoiseGrid(Random random, int size)
     {
         var grid = new float[size, size];
@@ -1025,6 +1042,13 @@ public partial class Main : Node3D
                 Position = trunkPosition
             });
             AddTreeCanopy(leafTransforms[treeType], leafColors[treeType], treeType, new Vector3(px, h, pz), matureScale, random);
+            string treeId = $"{WorldSeed}:tree:{worldX}:{worldZ}:{attempt}";
+            if (!SurvivalGameplay.IsResourceConsumed(treeId))
+            {
+                var treeResource = CreateTreeResourceNode(treeId, actualTrunkHeight);
+                treeResource.Position = new Vector3(px, h + actualTrunkHeight * 0.42f, pz);
+                chunk.AddChild(treeResource);
+            }
         }
 
         if (treeCollisionShapes.Count > 0)
@@ -1266,6 +1290,24 @@ public partial class Main : Node3D
             Mesh = mesh,
             MaterialOverride = material,
             Scale = new Vector3(size * 1.25f, size, size * (0.78f + (float)random.NextDouble() * 0.35f))
+        });
+        return node;
+    }
+
+    private static ResourceNode CreateTreeResourceNode(string persistentId, float trunkHeight)
+    {
+        var node = new ResourceNode
+        {
+            Name = "HarvestableTree",
+            ResourceKind = "tree",
+            PersistentId = persistentId,
+            HitPoints = 4,
+            CollisionLayer = 1,
+            CollisionMask = 1
+        };
+        node.AddChild(new CollisionShape3D
+        {
+            Shape = new CylinderShape3D { Radius = 0.65f, Height = Mathf.Max(1.4f, trunkHeight * 0.82f) }
         });
         return node;
     }
