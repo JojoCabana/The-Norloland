@@ -10,6 +10,9 @@ public partial class Main : Node3D
     [Export(PropertyHint.Range, "8,32,1")] public int ChunkSize { get; set; } = 16;
 
     private readonly Dictionary<Vector2I, Node3D> _chunks = new();
+    private readonly Dictionary<Vector2I, MeshInstance3D> _terrainMeshes = new();
+    private readonly Dictionary<Vector2I, CollisionShape3D> _terrainColliders = new();
+    private readonly Dictionary<Vector2I, float> _excavationDepth = new();
     private readonly HashSet<Vector2I> _wantedChunks = new();
     private Queue<Vector2I> _pendingChunks = new();
     private static readonly Color[] FlowerColors =
@@ -30,6 +33,7 @@ public partial class Main : Node3D
     private PanelContainer _pauseMenu = null!;
     private PanelContainer _settingsMenu = null!;
     private Label _viewDistanceLabel = null!;
+    private SurvivalGameplay _survival = null!;
     private Vector2I _lastCenter = new(int.MinValue, int.MinValue);
     private StandardMaterial3D _terrainMaterial = null!;
     private StandardMaterial3D[] _trunkMaterials = null!;
@@ -165,6 +169,9 @@ public partial class Main : Node3D
         CreateLighting();
         CreatePlayer();
         CreateHud();
+        _survival = new SurvivalGameplay { Name = "SurvivalGameplay" };
+        AddChild(_survival);
+        _survival.Initialize(this, _player);
         CreateMenus();
         UpdateChunkTargets(true);
     }
@@ -202,7 +209,7 @@ public partial class Main : Node3D
         {
             _hud.Text = "THE NORLOLAND  |  Seed: " + WorldSeed +
                         "  |  Chunks: " + _chunks.Count +
-                        "  |  WASD bewegen  |  Space springen  |  F3 Debug  |  Esc Menü  |  F10 Maus lösen";
+                        "  |  WASD/Space  |  E Sammeln  |  Linksklick Abbau  |  C Crafting  |  1–4 Werkzeuge  |  F3 Debug  |  Esc Menü";
         }
 
         if (_debugHud != null && _debugHud.Visible)
@@ -211,7 +218,8 @@ public partial class Main : Node3D
             _debugHud.Text = "DEBUG (F3)" +
                 "\nFPS: " + Engine.GetFramesPerSecond() +
                 "\nPosition: " + position.X.ToString("F1") + ", " + position.Y.ToString("F1") + ", " + position.Z.ToString("F1") +
-                "\nTerrain: " + GetTerrainName(Mathf.FloorToInt(position.X), Mathf.FloorToInt(position.Z)) +
+                "\nBiome: " + GetBiomeName(Mathf.FloorToInt(position.X), Mathf.FloorToInt(position.Z)) +
+                "\nTerrain form: " + GetTerrainForm(position.X, position.Z) +
                 "\nChunk: " + center.X + ", " + center.Y +
                 "\nChunks loaded: " + _chunks.Count + " / " + _wantedChunks.Count +
                 "  |  Queued: " + _pendingChunks.Count +
@@ -223,6 +231,14 @@ public partial class Main : Node3D
     {
         if (@event is not InputEventKey key || !key.Pressed || key.Echo)
             return;
+
+        if ((key.Keycode == Key.Escape || key.PhysicalKeycode == Key.Escape) && _survival?.CraftingVisible == true)
+        {
+            _survival.HideCraftingMenu();
+            _escapeWasPressed = true;
+            GetViewport().SetInputAsHandled();
+            return;
+        }
 
         if (key.Keycode == Key.F3)
         {
@@ -259,6 +275,20 @@ public partial class Main : Node3D
         }
 
         SetMenuOpen(false);
+    }
+
+    public void SetCraftingOverlayOpen(bool isOpen)
+    {
+        if (isOpen)
+        {
+            GetTree().Paused = true;
+            Input.MouseMode = Input.MouseModeEnum.Visible;
+        }
+        else if (_menuRoot == null || !_menuRoot.Visible)
+        {
+            GetTree().Paused = false;
+            Input.MouseMode = Input.MouseModeEnum.Captured;
+        }
     }
 
     private static StandardMaterial3D CreateMaterial(Color color, Texture2D? texture = null)
@@ -352,7 +382,7 @@ public partial class Main : Node3D
 
         _debugHud = new Label
         {
-            Position = new Vector2(16, 78),
+            Position = new Vector2(16, 156),
             Text = "DEBUG",
             Visible = false,
             MouseFilter = Control.MouseFilterEnum.Ignore
@@ -404,6 +434,7 @@ public partial class Main : Node3D
         pauseContent.AddChild(CreateMenuTitle("PAUSE"));
         pauseContent.AddChild(CreateMenuButton("Weiter", () => SetMenuOpen(false)));
         pauseContent.AddChild(CreateMenuButton("Einstellungen", ShowSettingsMenu));
+        pauseContent.AddChild(CreateMenuButton("Rucksack & Herstellen", _survival.ShowCraftingMenu));
 
         _settingsMenu = new PanelContainer
         {
@@ -560,6 +591,8 @@ public partial class Main : Node3D
 
             _chunks[key].QueueFree();
             _chunks.Remove(key);
+            _terrainMeshes.Remove(key);
+            _terrainColliders.Remove(key);
         }
 
         _pendingChunks = new Queue<Vector2I>(
@@ -576,51 +609,8 @@ public partial class Main : Node3D
             Position = new Vector3(coordinate.X * ChunkSize, 0, coordinate.Y * ChunkSize)
         };
 
-        int sampleCount = ChunkSize + 1;
-        float[,] heights = new float[sampleCount, sampleCount];
-        for (int x = 0; x < sampleCount; x++)
-        for (int z = 0; z < sampleCount; z++)
-            heights[x, z] = GetHeight(coordinate.X * ChunkSize + x, coordinate.Y * ChunkSize + z);
-
-        Color[,] terrainColors = new Color[sampleCount, sampleCount];
-        for (int x = 0; x < sampleCount; x++)
-        for (int z = 0; z < sampleCount; z++)
-            terrainColors[x, z] = GetTerrainColor(
-                heights, x, z,
-                coordinate.X * ChunkSize + x,
-                coordinate.Y * ChunkSize + z);
-
-        var surface = new SurfaceTool();
-        surface.Begin(Mesh.PrimitiveType.Triangles);
-
-        for (int x = 0; x < ChunkSize; x++)
-        {
-            for (int z = 0; z < ChunkSize; z++)
-            {
-                int worldX = coordinate.X * ChunkSize + x;
-                int worldZ = coordinate.Y * ChunkSize + z;
-                Vector3 p00 = new(x, heights[x, z], z);
-                Vector3 p01 = new(x, heights[x, z + 1], z + 1);
-                Vector3 p11 = new(x + 1, heights[x + 1, z + 1], z + 1);
-                Vector3 p10 = new(x + 1, heights[x + 1, z], z);
-                Color c00 = terrainColors[x, z];
-                Color c01 = terrainColors[x, z + 1];
-                Color c11 = terrainColors[x + 1, z + 1];
-                Color c10 = terrainColors[x + 1, z];
-
-                AddTerrainVertex(surface, p00, c00, new Vector2(worldX, worldZ));
-                AddTerrainVertex(surface, p01, c01, new Vector2(worldX, worldZ + 1));
-                AddTerrainVertex(surface, p11, c11, new Vector2(worldX + 1, worldZ + 1));
-                AddTerrainVertex(surface, p00, c00, new Vector2(worldX, worldZ));
-                AddTerrainVertex(surface, p11, c11, new Vector2(worldX + 1, worldZ + 1));
-                AddTerrainVertex(surface, p10, c10, new Vector2(worldX + 1, worldZ));
-            }
-        }
-
-        surface.Index();
-        surface.GenerateNormals();
-
-        ArrayMesh mesh = surface.Commit() as ArrayMesh;
+        float[,] heights = CreateTerrainHeightGrid(coordinate);
+        ArrayMesh mesh = CreateTerrainMesh(coordinate, heights);
         var terrain = new MeshInstance3D
         {
             Name = "TerrainMesh",
@@ -628,6 +618,7 @@ public partial class Main : Node3D
             MaterialOverride = _terrainMaterial
         };
         chunk.AddChild(terrain);
+        _terrainMeshes[coordinate] = terrain;
 
         // A single heightmap collider per chunk avoids building a triangle mesh collider
         // from every rendered terrain face. The height samples use the same grid as the mesh.
@@ -638,18 +629,114 @@ public partial class Main : Node3D
             MapData = CreateHeightMapData(heights)
         };
         var collision = new StaticBody3D { Name = "TerrainCollision" };
-        collision.AddChild(new CollisionShape3D
+        var terrainCollisionShape = new CollisionShape3D
         {
             Shape = heightMap,
             Position = new Vector3(ChunkSize * 0.5f, 0, ChunkSize * 0.5f)
-        });
+        };
+        collision.AddChild(terrainCollisionShape);
         chunk.AddChild(collision);
+        _terrainColliders[coordinate] = terrainCollisionShape;
 
         AddTrees(chunk, coordinate, heights);
         AddGrass(chunk, coordinate, heights);
         AddFlowers(chunk, coordinate, heights);
         AddShrubs(chunk, coordinate, heights);
+        AddLooseStones(chunk, coordinate, heights);
         return chunk;
+    }
+
+    private float[,] CreateTerrainHeightGrid(Vector2I coordinate)
+    {
+        int sampleCount = ChunkSize + 1;
+        var heights = new float[sampleCount, sampleCount];
+        for (int x = 0; x < sampleCount; x++)
+        for (int z = 0; z < sampleCount; z++)
+            heights[x, z] = GetHeight(coordinate.X * ChunkSize + x, coordinate.Y * ChunkSize + z);
+        return heights;
+    }
+
+    private ArrayMesh CreateTerrainMesh(Vector2I coordinate, float[,] heights)
+    {
+        int sampleCount = ChunkSize + 1;
+        Color[,] terrainColors = new Color[sampleCount, sampleCount];
+        for (int x = 0; x < sampleCount; x++)
+        for (int z = 0; z < sampleCount; z++)
+            terrainColors[x, z] = GetTerrainColor(heights, x, z, coordinate.X * ChunkSize + x, coordinate.Y * ChunkSize + z);
+
+        var surface = new SurfaceTool();
+        surface.Begin(Mesh.PrimitiveType.Triangles);
+        for (int x = 0; x < ChunkSize; x++)
+        for (int z = 0; z < ChunkSize; z++)
+        {
+            int worldX = coordinate.X * ChunkSize + x;
+            int worldZ = coordinate.Y * ChunkSize + z;
+            Vector3 p00 = new(x, heights[x, z], z);
+            Vector3 p01 = new(x, heights[x, z + 1], z + 1);
+            Vector3 p11 = new(x + 1, heights[x + 1, z + 1], z + 1);
+            Vector3 p10 = new(x + 1, heights[x + 1, z], z);
+            Color c00 = terrainColors[x, z];
+            Color c01 = terrainColors[x, z + 1];
+            Color c11 = terrainColors[x + 1, z + 1];
+            Color c10 = terrainColors[x + 1, z];
+            AddTerrainVertex(surface, p00, c00, new Vector2(worldX, worldZ));
+            AddTerrainVertex(surface, p01, c01, new Vector2(worldX, worldZ + 1));
+            AddTerrainVertex(surface, p11, c11, new Vector2(worldX + 1, worldZ + 1));
+            AddTerrainVertex(surface, p00, c00, new Vector2(worldX, worldZ));
+            AddTerrainVertex(surface, p11, c11, new Vector2(worldX + 1, worldZ + 1));
+            AddTerrainVertex(surface, p10, c10, new Vector2(worldX + 1, worldZ));
+        }
+        surface.Index();
+        surface.GenerateNormals();
+        return surface.Commit() as ArrayMesh;
+    }
+
+    public float GetGroundHeight(float worldX, float worldZ)
+        => GetHeight(Mathf.RoundToInt(worldX), Mathf.RoundToInt(worldZ));
+
+    public void DigGroundAt(Vector3 worldPosition, float radius, float depth)
+    {
+        int centerX = Mathf.RoundToInt(worldPosition.X);
+        int centerZ = Mathf.RoundToInt(worldPosition.Z);
+        int extent = Mathf.CeilToInt(radius);
+        for (int x = centerX - extent; x <= centerX + extent; x++)
+        for (int z = centerZ - extent; z <= centerZ + extent; z++)
+        {
+            float distance = (new Vector2(x, z) - new Vector2(worldPosition.X, worldPosition.Z)).Length();
+            if (distance > radius) continue;
+            float falloff = 1.0f - distance / radius;
+            falloff = falloff * falloff * (3.0f - 2.0f * falloff);
+            var key = new Vector2I(x, z);
+            _excavationDepth.TryGetValue(key, out float existingDepth);
+            _excavationDepth[key] = Mathf.Min(existingDepth + depth * falloff, 2.2f);
+        }
+
+        foreach (Vector2I coordinate in _chunks.Keys.ToArray())
+        {
+            float minX = coordinate.X * ChunkSize - radius - 1.0f;
+            float maxX = (coordinate.X + 1) * ChunkSize + radius + 1.0f;
+            float minZ = coordinate.Y * ChunkSize - radius - 1.0f;
+            float maxZ = (coordinate.Y + 1) * ChunkSize + radius + 1.0f;
+            if (worldPosition.X < minX || worldPosition.X > maxX || worldPosition.Z < minZ || worldPosition.Z > maxZ)
+                continue;
+            RefreshTerrainChunk(coordinate);
+        }
+    }
+
+    private void RefreshTerrainChunk(Vector2I coordinate)
+    {
+        if (!_terrainMeshes.TryGetValue(coordinate, out MeshInstance3D terrain) ||
+            !_terrainColliders.TryGetValue(coordinate, out CollisionShape3D collider))
+            return;
+
+        float[,] heights = CreateTerrainHeightGrid(coordinate);
+        terrain.Mesh = CreateTerrainMesh(coordinate, heights);
+        collider.Shape = new HeightMapShape3D
+        {
+            MapWidth = ChunkSize + 1,
+            MapDepth = ChunkSize + 1,
+            MapData = CreateHeightMapData(heights)
+        };
     }
 
     private float[] CreateHeightMapData(float[,] heights)
@@ -759,6 +846,11 @@ public partial class Main : Node3D
         if (height >= 39.0f || slope >= 2.5f)
             return "Hügeliges Hochland";
 
+        return GetBiomeName(worldX, worldZ);
+    }
+
+    private string GetBiomeName(int worldX, int worldZ)
+    {
         float biome = _biomeNoise.GetNoise2D(worldX, worldZ);
         if (biome < -0.42f)
             return "Trockenes Buschland";
@@ -771,6 +863,20 @@ public partial class Main : Node3D
         return "Grasland";
     }
 
+    private string GetTerrainForm(float worldX, float worldZ)
+    {
+        int x = Mathf.RoundToInt(worldX);
+        int z = Mathf.RoundToInt(worldZ);
+        float height = GetHeight(x, z);
+        float slope = Mathf.Max(
+            Mathf.Abs(GetHeight(x + 1, z) - GetHeight(x - 1, z)),
+            Mathf.Abs(GetHeight(x, z + 1) - GetHeight(x, z - 1))) * 0.5f;
+        if (height >= 43.0f) return "Hochgebirge";
+        if (height >= 39.0f || slope >= 2.5f) return "Hochland/Hang";
+        if (slope >= 1.3f) return "sanfte Hügel";
+        return "Ebene";
+    }
+
     private float GetHeight(int worldX, int worldZ)
     {
         float noise = _terrainNoise.GetNoise2D(worldX, worldZ);
@@ -778,7 +884,10 @@ public partial class Main : Node3D
         float ridgeField = _mountainNoise.GetNoise2D(worldX, worldZ);
         float mountainMask = Mathf.Clamp((ridgeField + 0.18f) * 1.2f, 0.0f, 1.0f);
         float ridges = Mathf.Pow(mountainMask, 1.7f) * 4.5f;
-        return 27.0f + noise * 7.0f + detail * 0.9f + ridges;
+        float height = 27.0f + noise * 7.0f + detail * 0.9f + ridges;
+        if (_excavationDepth.TryGetValue(new Vector2I(worldX, worldZ), out float dugDepth))
+            height -= dugDepth;
+        return height;
     }
 
     private Color GetGrassColor(int worldX, int worldZ)
@@ -999,10 +1108,7 @@ public partial class Main : Node3D
         int worldCenterX = coordinate.X * ChunkSize + ChunkSize / 2;
         int worldCenterZ = coordinate.Y * ChunkSize + ChunkSize / 2;
         float biome = _biomeNoise.GetNoise2D(worldCenterX, worldCenterZ);
-        int bushCount = biome < -0.42f ? 2 : biome < -0.18f ? 4 : biome > 0.48f ? 7 : biome > 0.24f ? 5 : 4;
-        var branchTransforms = new List<Transform3D>();
-        var leafTransforms = new List<Transform3D>();
-        var leafColors = new List<Color>();
+        int bushCount = biome < -0.42f ? 1 : biome < -0.18f ? 2 : biome > 0.48f ? 4 : biome > 0.24f ? 3 : 2;
         for (int i = 0; i < bushCount; i++)
         {
             int x = random.Next(1, ChunkSize - 1);
@@ -1011,47 +1117,80 @@ public partial class Main : Node3D
             float px = x + (float)random.NextDouble();
             float pz = z + (float)random.NextDouble();
             float y = SampleTerrainHeight(heights, px, pz);
-            float size = 0.78f + (float)random.NextDouble() * 0.42f;
-            int branches = 5 + random.Next(0, 3);
-            for (int branch = 0; branch < branches; branch++)
-            {
-                float angle = (float)random.NextDouble() * Mathf.Tau;
-                float reach = size * (0.22f + (float)random.NextDouble() * 0.16f);
-                float branchHeight = size * (0.42f + (float)random.NextDouble() * 0.28f);
-                float tilt = 0.18f + (float)random.NextDouble() * 0.28f;
-                Vector3 branchBase = new(px, y + size * 0.08f, pz);
-                Vector3 branchCenter = branchBase + new Vector3(Mathf.Cos(angle) * reach * 0.42f, branchHeight * 0.5f, Mathf.Sin(angle) * reach * 0.42f);
-                branchTransforms.Add(new Transform3D(
-                    Basis.FromEuler(new Vector3(Mathf.Sin(angle) * tilt, angle, -Mathf.Cos(angle) * tilt))
-                        .Scaled(new Vector3(0.045f * size, branchHeight, 0.045f * size)),
-                    branchCenter));
+            var bush = new GrowingBush { Name = $"GrowingBush_{i}" };
+            bush.Configure(unchecked(WorldSeed ^ coordinate.X * 73856093 ^ coordinate.Y * 19349663 ^ i * 83492791), biome);
+            bush.Position = new Vector3(px, y, pz);
+            chunk.AddChild(bush);
+        }
+    }
 
-                for (int leaf = 0; leaf < 4; leaf++)
-                {
-                    float along = 0.38f + leaf * 0.15f;
-                    float spread = reach * along;
-                    Vector3 leafPosition = branchBase + new Vector3(
-                        Mathf.Cos(angle) * spread,
-                        branchHeight * along + (float)random.NextDouble() * 0.05f,
-                        Mathf.Sin(angle) * spread);
-                    float leafWidth = size * (0.18f + (float)random.NextDouble() * 0.12f);
-                    float leafHeight = size * (0.14f + (float)random.NextDouble() * 0.10f);
-                    Vector3 leafRotation = new(
-                        Mathf.Sin(angle) * (0.30f + (float)random.NextDouble() * 0.35f),
-                        angle + ((float)random.NextDouble() - 0.5f) * 0.65f,
-                        -Mathf.Cos(angle) * (0.22f + (float)random.NextDouble() * 0.30f));
-                    leafTransforms.Add(new Transform3D(
-                        Basis.FromEuler(leafRotation).Scaled(new Vector3(leafWidth, leafHeight, leafWidth * 0.22f)),
-                        leafPosition));
-                    float variation = (float)random.NextDouble() * 0.12f;
-                    Color tint = biome < -0.42f ? new Color(1.0f, 0.86f, 0.63f) :
-                        biome > 0.48f ? new Color(0.78f, 0.91f, 0.70f) : new Color(0.91f, 1.0f, 0.82f);
-                    leafColors.Add(tint * (0.94f + variation));
-                }
+    private void AddLooseStones(Node3D chunk, Vector2I coordinate, float[,] heights)
+    {
+        var random = new Random(unchecked(WorldSeed ^ coordinate.X * 15485863 ^ coordinate.Y * 32452843 ^ 0x51A7));
+        int looseStoneCount = random.Next(0, 3);
+        for (int i = 0; i < looseStoneCount; i++)
+        {
+            int x = random.Next(1, ChunkSize - 1);
+            int z = random.Next(1, ChunkSize - 1);
+            if (!IsPlantable(heights, x, z)) continue;
+            int roll = random.Next(100);
+            string kind = roll < 42 ? "small_stone" : roll < 91 ? "medium_stone" : "large_stone";
+            float size = kind switch { "small_stone" => 0.12f, "medium_stone" => 0.19f, _ => 0.27f };
+            float px = x + (float)random.NextDouble();
+            float pz = z + (float)random.NextDouble();
+            float y = SampleTerrainHeight(heights, px, pz);
+            var stone = CreateResourceNode(kind, size, 1, random);
+            stone.Name = "LooseStone_" + i;
+            stone.Position = new Vector3(px, y + size * 0.35f, pz);
+            chunk.AddChild(stone);
+        }
+
+        if (random.NextDouble() < 0.16)
+        {
+            int x = random.Next(2, ChunkSize - 2);
+            int z = random.Next(2, ChunkSize - 2);
+            if (IsPlantable(heights, x, z))
+            {
+                float px = x + 0.5f;
+                float pz = z + 0.5f;
+                float y = SampleTerrainHeight(heights, px, pz);
+                var deposit = CreateResourceNode("stone_deposit", 0.62f, 5, random);
+                deposit.Name = "StoneDeposit";
+                deposit.Position = new Vector3(px, y + 0.25f, pz);
+                chunk.AddChild(deposit);
             }
         }
-        AddMultiMesh(chunk, "ShrubBranches", new CylinderMesh { TopRadius = 0.34f, BottomRadius = 0.5f, Height = 1.0f, RadialSegments = 5 }, _shrubTwigMaterial, branchTransforms);
-        AddColoredMultiMesh(chunk, "ShrubLeaves", _shrubLeafMesh, _shrubMaterial, leafTransforms, leafColors);
+    }
+
+    private static ResourceNode CreateResourceNode(string kind, float size, int hitPoints, Random random)
+    {
+        var node = new ResourceNode
+        {
+            ResourceKind = kind,
+            HitPoints = hitPoints,
+            CollisionLayer = 1,
+            CollisionMask = 0
+        };
+        node.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = size * (kind == "stone_deposit" ? 1.2f : 1.7f) } });
+        var mesh = new SphereMesh
+        {
+            Radius = 1.0f,
+            Height = 1.55f,
+            RadialSegments = kind == "stone_deposit" ? 9 : 7,
+            Rings = kind == "stone_deposit" ? 5 : 4
+        };
+        var material = new StandardMaterial3D
+        {
+            AlbedoColor = kind == "stone_deposit" ? new Color(0.35f, 0.36f, 0.34f) : new Color(0.48f, 0.49f, 0.46f),
+            Roughness = 1.0f
+        };
+        node.AddChild(new MeshInstance3D
+        {
+            Mesh = mesh,
+            MaterialOverride = material,
+            Scale = new Vector3(size * 1.25f, size, size * (0.78f + (float)random.NextDouble() * 0.35f))
+        });
+        return node;
     }
 
     private static ArrayMesh CreateShrubLeafMesh()
