@@ -137,10 +137,10 @@ public partial class Main : Node3D
         };
         _leavesMaterials = new[]
         {
-            CreateMaterial(Colors.White, foliageTexture),
-            CreateMaterial(new Color(0.83f, 0.91f, 0.78f), foliageTexture),
-            CreateMaterial(new Color(0.88f, 0.94f, 0.80f), foliageTexture),
-            CreateMaterial(new Color(0.93f, 0.91f, 0.73f), foliageTexture)
+            CreateMaterial(new Color(0.42f, 0.58f, 0.30f), foliageTexture),
+            CreateMaterial(new Color(0.30f, 0.47f, 0.22f), foliageTexture),
+            CreateMaterial(new Color(0.50f, 0.64f, 0.31f), foliageTexture),
+            CreateMaterial(new Color(0.36f, 0.50f, 0.20f), foliageTexture)
         };
         foreach (StandardMaterial3D material in _leavesMaterials)
             material.VertexColorUseAsAlbedo = true;
@@ -356,7 +356,13 @@ public partial class Main : Node3D
             BackgroundColor = new Color(0.48f, 0.66f, 0.78f),
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
             AmbientLightColor = new Color(0.72f, 0.77f, 0.82f),
-            AmbientLightEnergy = 0.7f
+            AmbientLightEnergy = 0.48f,
+            TonemapMode = Godot.Environment.ToneMapper.Filmic,
+            FogEnabled = true,
+            FogLightColor = new Color(0.26f, 0.34f, 0.27f),
+            FogDensity = 0.012f,
+            FogHeight = 24.0f,
+            FogHeightDensity = 0.045f
         };
         worldEnvironment.Environment = environment;
         AddChild(worldEnvironment);
@@ -365,7 +371,8 @@ public partial class Main : Node3D
         {
             Name = "Sun",
             RotationDegrees = new Vector3(-48, -32, 0),
-            LightEnergy = 1.15f,
+            LightEnergy = 0.82f,
+            LightColor = new Color(1.0f, 0.91f, 0.73f),
             ShadowEnabled = true
         };
         AddChild(sun);
@@ -744,6 +751,19 @@ public partial class Main : Node3D
         }
     }
 
+    public void RemoveTreeAt(Vector3 worldPosition, string persistentId)
+    {
+        if (!string.IsNullOrEmpty(persistentId))
+            SurvivalGameplay.MarkWorldResourceConsumed(persistentId);
+        Vector2I coordinate = new(Mathf.FloorToInt(worldPosition.X / ChunkSize), Mathf.FloorToInt(worldPosition.Z / ChunkSize));
+        if (!_chunks.TryGetValue(coordinate, out Node3D chunk)) return;
+        chunk.QueueFree();
+        _chunks.Remove(coordinate);
+        _terrainMeshes.Remove(coordinate);
+        _terrainColliders.Remove(coordinate);
+        if (!_pendingChunks.Contains(coordinate)) _pendingChunks.Enqueue(coordinate);
+    }
+
     public bool IsRockLayerAt(float worldX, float worldZ)
     {
         var key = new Vector2I(Mathf.RoundToInt(worldX), Mathf.RoundToInt(worldZ));
@@ -1013,6 +1033,9 @@ public partial class Main : Node3D
             float pz = z + 0.5f;
             int worldX = coordinate.X * ChunkSize + x;
             int worldZ = coordinate.Y * ChunkSize + z;
+            string treeId = $"{WorldSeed}:tree:{worldX}:{worldZ}:{attempt}";
+            if (SurvivalGameplay.IsResourceConsumed(treeId))
+                continue;
             float biome = _biomeNoise.GetNoise2D(worldX, worldZ);
             double density = biome < -0.42f ? 0.10 : biome < -0.18f ? 0.20 :
                 biome > 0.48f ? 0.62 : biome > 0.24f ? 0.43 : 0.34;
@@ -1042,13 +1065,9 @@ public partial class Main : Node3D
                 Position = trunkPosition
             });
             AddTreeCanopy(leafTransforms[treeType], leafColors[treeType], treeType, new Vector3(px, h, pz), matureScale, random);
-            string treeId = $"{WorldSeed}:tree:{worldX}:{worldZ}:{attempt}";
-            if (!SurvivalGameplay.IsResourceConsumed(treeId))
-            {
-                var treeResource = CreateTreeResourceNode(treeId, actualTrunkHeight);
-                treeResource.Position = new Vector3(px, h + actualTrunkHeight * 0.42f, pz);
-                chunk.AddChild(treeResource);
-            }
+            var treeResource = CreateTreeResourceNode(treeId, actualTrunkHeight);
+            treeResource.Position = new Vector3(px, h + actualTrunkHeight * 0.42f, pz);
+            chunk.AddChild(treeResource);
         }
 
         if (treeCollisionShapes.Count > 0)
@@ -1225,14 +1244,14 @@ public partial class Main : Node3D
             int z = random.Next(1, ChunkSize - 1);
             if (!IsPlantable(heights, x, z)) continue;
             int roll = random.Next(100);
-            string kind = roll < 42 ? "small_stone" : roll < 91 ? "medium_stone" : "large_stone";
+            string kind = roll < 82 ? "small_stone" : "large_stone";
             string persistentId = $"{WorldSeed}:loose:{coordinate.X}:{coordinate.Y}:{i}";
             if (SurvivalGameplay.IsResourceConsumed(persistentId))
             {
                 random.NextDouble(); // Match the per-stone visual variation draw to preserve later chunk randomness.
                 continue;
             }
-            float size = kind switch { "small_stone" => 0.055f, "medium_stone" => 0.085f, _ => 0.12f };
+            float size = kind switch { "small_stone" => 0.055f, _ => 0.16f };
             float px = x + (float)random.NextDouble();
             float pz = z + (float)random.NextDouble();
             float y = SampleTerrainHeight(heights, px, pz);

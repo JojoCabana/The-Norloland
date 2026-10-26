@@ -43,6 +43,9 @@ public partial class SurvivalGameplay : Node
             ConsumedResources.Add(persistentId);
     }
 
+    public static void MarkWorldResourceConsumed(string persistentId)
+        => MarkResourceConsumed(persistentId);
+
     public void Initialize(Main main, PlayerController player)
     {
         _main = main;
@@ -269,13 +272,13 @@ public partial class SurvivalGameplay : Node
         content.AddChild(_itemGrid);
         content.AddChild(new Label
         {
-            Text = "Abgebaute Erde und Steinblöcke landen hier im Inventar.\nAxt und Schaufel: je 1 Stock + 1 mittlerer Stein + 1 Schlagstein.\nSpitzhacke: 1 Stock + 1 großer Stein + 1 Schlagstein.",
+            Text = "Abgebaute Erde und Steinblöcke landen hier im Inventar.\nAxt und Schaufel: je 1 Stock + 1 großer Stein + 1 kleiner Schlagstein.\nSpitzhacke: 1 Stock + 1 großer Stein + 1 kleiner Schlagstein.",
             AutowrapMode = TextServer.AutowrapMode.WordSmart
         });
         content.AddChild(CreateCraftButton("Steinaxt herstellen", () => CraftTool("axe")));
         content.AddChild(CreateCraftButton("Steinschaufel herstellen", () => CraftTool("shovel")));
         content.AddChild(CreateCraftButton("Steinspitzhacke herstellen", () => CraftTool("pickaxe")));
-        content.AddChild(CreateCraftButton("Großen Stein in 2 mittlere spalten", SplitLargeStone));
+        content.AddChild(CreateCraftButton("Großen Stein in kleine Steine spalten", SplitLargeStone));
         content.AddChild(CreateCraftButton("Baubuch öffnen", ShowBuildBook));
         content.AddChild(CreateCraftButton("Schließen  ·  I / Esc", HideCraftingMenu));
 
@@ -312,23 +315,39 @@ public partial class SurvivalGameplay : Node
     private void RefreshInventoryText()
     {
         if (_craftInventory != null)
-            _craftInventory.Text = $"Holz: {_wood}   Setzlinge: {_saplings}\nStöcke: {_sticks}   Schlagsteine: {_smallStone}\nMittlere Steine: {_mediumStone}   Große Steine: {_largeStone}\nErde: {_dirt}   Steinblöcke: {_stoneBlocks}\nWerkzeuge: {(_hasAxe ? "Axt " : "")}{(_hasShovel ? "Schaufel " : "")}{(_hasPickaxe ? "Spitzhacke" : "Noch keine")}";
+            _craftInventory.Text = $"Holz: {_wood}   Setzlinge: {_saplings}\nStöcke: {_sticks}   Kleine Steine: {_smallStone}   Große Steine: {_largeStone}\nErde: {_dirt}   Steinblöcke: {_stoneBlocks}\nWerkzeuge: {(_hasAxe ? "Axt " : "")}{(_hasShovel ? "Schaufel " : "")}{(_hasPickaxe ? "Spitzhacke" : "Noch keine")}";
         if (_itemGrid != null)
         {
             foreach (Node child in _itemGrid.GetChildren()) child.QueueFree();
             _itemGrid.AddChild(CreateItemSlot("Holz", _wood, new Color(0.40f, 0.22f, 0.10f)));
             _itemGrid.AddChild(CreateItemSlot("Setzlinge", _saplings, new Color(0.24f, 0.52f, 0.18f)));
-            _itemGrid.AddChild(CreateItemSlot("Steine", _smallStone + _mediumStone + _largeStone, new Color(0.45f, 0.47f, 0.45f)));
+            _itemGrid.AddChild(CreateItemSlot("Steine", _smallStone + _largeStone, new Color(0.45f, 0.47f, 0.45f)));
             _itemGrid.AddChild(CreateItemSlot("Erde", _dirt, new Color(0.30f, 0.18f, 0.10f)));
         }
         if (_statusLabel != null)
-            _statusLabel.Text = $"Werkzeug: {_currentTool}  (1 Hand · 2 Schaufel · 3 Spitzhacke · 4 Axt)\nStöcke {_sticks}  |  Schlagsteine {_smallStone}  |  mittlere Steine {_mediumStone}  |  große Steine {_largeStone}";
+            _statusLabel.Text = $"Werkzeug: {_currentTool}  (1 Hand · 2 Schaufel · 3 Spitzhacke · 4 Axt)\nStöcke {_sticks}  |  kleine Steine {_smallStone}  |  große Steine {_largeStone}";
     }
 
     private static Control CreateItemSlot(string name, int count, Color color)
     {
         var row = new HBoxContainer { CustomMinimumSize = new Vector2(220, 34) };
-        row.AddChild(new ColorRect { Color = color, CustomMinimumSize = new Vector2(28, 28), MouseFilter = Control.MouseFilterEnum.Ignore });
+        string iconName = name switch
+        {
+            "Holz" => "wood",
+            "Setzlinge" => "sapling",
+            "Steine" => "large_stone",
+            "Erde" => "dirt",
+            _ => "small_stone"
+        };
+        var icon = new TextureRect
+        {
+            Texture = GD.Load<Texture2D>($"res://Assets/Textures/Items/{iconName}.png"),
+            CustomMinimumSize = new Vector2(36, 36),
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        row.AddChild(icon);
         row.AddChild(new Label { Text = $"  {name}  × {count}", VerticalAlignment = VerticalAlignment.Center });
         return row;
     }
@@ -380,6 +399,7 @@ public partial class SurvivalGameplay : Node
             _wood += wood;
             _saplings++;
             MarkResourceConsumed(resource.PersistentId);
+            _main.RemoveTreeAt(resource.GlobalPosition, resource.PersistentId);
             resource.QueueFree();
             _hintLabel.Text = $"Baum gefällt: +{wood} Holz, +1 Setzling.";
             RefreshInventoryText();
@@ -391,7 +411,7 @@ public partial class SurvivalGameplay : Node
             switch (resource.ResourceKind)
             {
                 case "small_stone": _smallStone++; break;
-                case "medium_stone": _mediumStone++; break;
+                case "medium_stone": _smallStone++; break;
                 case "large_stone": _largeStone++; break;
             }
             MarkResourceConsumed(resource.PersistentId);
@@ -454,11 +474,11 @@ public partial class SurvivalGameplay : Node
                 resource.HitPoints--;
                 if (resource.HitPoints <= 0)
                 {
-                    _mediumStone += 2;
+                    _largeStone++;
                     _smallStone++;
                     MarkResourceConsumed(resource.PersistentId);
                     resource.QueueFree();
-                    _hintLabel.Text = "Du gewinnst zwei mittlere Steine und einen Schlagstein.";
+                    _hintLabel.Text = "Du gewinnst einen großen und einen kleinen Stein.";
                     RefreshInventoryText();
                 }
             }
@@ -534,7 +554,7 @@ public partial class SurvivalGameplay : Node
     private void CraftTool(string kind)
     {
         bool isPickaxe = kind == "pickaxe";
-        int requiredStone = isPickaxe ? _largeStone : _mediumStone;
+        int requiredStone = _largeStone;
         if (_sticks < 1 || requiredStone < 1 || _smallStone < 1)
         {
             _hintLabel.Text = "Fehlt: 1 Stock, 1 passender Stein und 1 Schlagstein. Der Schlagstein wird verbraucht.";
@@ -549,7 +569,7 @@ public partial class SurvivalGameplay : Node
         }
         else
         {
-            _mediumStone--;
+            _largeStone--;
             if (kind == "axe") _hasAxe = true;
             else _hasShovel = true;
         }
@@ -571,8 +591,8 @@ public partial class SurvivalGameplay : Node
         }
         _largeStone--;
         _smallStone--;
-        _mediumStone += 2;
-        _hintLabel.Text = "Der große Stein wurde in zwei mittlere Steine gespalten.";
+        _smallStone += 2;
+        _hintLabel.Text = "Der große Stein wurde in kleine Steine gespalten.";
         RefreshInventoryText();
     }
 }
