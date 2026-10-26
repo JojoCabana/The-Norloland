@@ -7,6 +7,8 @@ public partial class Main : Node3D
 {
     [Export] public int WorldSeed { get; set; } = 0;
     [Export(PropertyHint.Range, "1,4,1")] public int ViewDistance { get; set; } = 2;
+    [Export] public bool AutoScaleViewDistance { get; set; } = true;
+    [Export(PropertyHint.Range, "30,120,1")] public int TargetFps { get; set; } = 60;
     [Export(PropertyHint.Range, "8,32,1")] public int ChunkSize { get; set; } = 16;
 
     private readonly Dictionary<Vector2I, Node3D> _chunks = new();
@@ -52,6 +54,9 @@ public partial class Main : Node3D
     private Mesh _flowerPetalMesh = null!;
     private bool _escapeWasPressed;
     private float _grassRegrowthTimer;
+    private float _adaptiveViewTimer;
+    private int _adaptiveGoodFrames;
+    private int _adaptiveBadFrames;
 
     public override void _Ready()
     {
@@ -130,10 +135,10 @@ public partial class Main : Node3D
 
         _trunkMaterials = new[]
         {
-            CreateMaterial(new Color(0.92f, 0.88f, 0.78f), barkTexture),
-            CreateMaterial(new Color(0.70f, 0.61f, 0.50f), barkTexture),
-            CreateMaterial(new Color(1.0f, 0.98f, 0.91f), barkTexture),
-            CreateMaterial(new Color(0.90f, 0.78f, 0.58f), barkTexture)
+            CreateMaterial(new Color(0.58f, 0.43f, 0.28f), barkTexture),
+            CreateMaterial(new Color(0.42f, 0.30f, 0.19f), barkTexture),
+            CreateMaterial(new Color(0.66f, 0.51f, 0.32f), barkTexture),
+            CreateMaterial(new Color(0.50f, 0.36f, 0.21f), barkTexture)
         };
         _leavesMaterials = new[]
         {
@@ -192,6 +197,15 @@ public partial class Main : Node3D
         Vector2I center = GetPlayerChunk();
         if (!GetTree().Paused)
         {
+            if (AutoScaleViewDistance)
+            {
+                _adaptiveViewTimer += (float)delta;
+                if (_adaptiveViewTimer >= 3.0f)
+                {
+                    AdaptViewDistance();
+                    _adaptiveViewTimer = 0.0f;
+                }
+            }
             _grassRegrowthTimer += (float)delta;
             if (_grassRegrowthTimer >= 5.0f)
             {
@@ -353,16 +367,16 @@ public partial class Main : Node3D
         var environment = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Color,
-            BackgroundColor = new Color(0.48f, 0.66f, 0.78f),
+            BackgroundColor = new Color(0.16f, 0.22f, 0.20f),
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
-            AmbientLightColor = new Color(0.72f, 0.77f, 0.82f),
-            AmbientLightEnergy = 0.48f,
+            AmbientLightColor = new Color(0.52f, 0.58f, 0.54f),
+            AmbientLightEnergy = 0.38f,
             TonemapMode = Godot.Environment.ToneMapper.Filmic,
             FogEnabled = true,
-            FogLightColor = new Color(0.26f, 0.34f, 0.27f),
-            FogDensity = 0.012f,
+            FogLightColor = new Color(0.43f, 0.47f, 0.44f),
+            FogDensity = 0.006f,
             FogHeight = 24.0f,
-            FogHeightDensity = 0.045f
+            FogHeightDensity = 0.018f
         };
         worldEnvironment.Environment = environment;
         AddChild(worldEnvironment);
@@ -371,8 +385,8 @@ public partial class Main : Node3D
         {
             Name = "Sun",
             RotationDegrees = new Vector3(-48, -32, 0),
-            LightEnergy = 0.82f,
-            LightColor = new Color(1.0f, 0.91f, 0.73f),
+            LightEnergy = 0.72f,
+            LightColor = new Color(1.0f, 0.86f, 0.66f),
             ShadowEnabled = true
         };
         AddChild(sun);
@@ -571,15 +585,53 @@ public partial class Main : Node3D
 
     private void SetViewDistance(double value)
     {
-        ViewDistance = Mathf.RoundToInt((float)value);
+        AutoScaleViewDistance = false;
+        ApplyViewDistance(Mathf.RoundToInt((float)value));
+    }
+
+    private void ApplyViewDistance(int distance)
+    {
+        ViewDistance = Mathf.Clamp(distance, 1, 4);
         _player.GetNode<Camera3D>("Camera3D").Far = ChunkSize * (ViewDistance + 1.0f);
         UpdateViewDistanceLabel();
         UpdateChunkTargets(true);
     }
 
+    private void AdaptViewDistance()
+    {
+        int fps = Mathf.RoundToInt((float)Engine.GetFramesPerSecond());
+        if (fps <= 0) return;
+        if (fps < TargetFps - 8)
+        {
+            _adaptiveBadFrames++;
+            _adaptiveGoodFrames = 0;
+        }
+        else if (fps > TargetFps + 12)
+        {
+            _adaptiveGoodFrames++;
+            _adaptiveBadFrames = 0;
+        }
+        else
+        {
+            _adaptiveGoodFrames = 0;
+            _adaptiveBadFrames = 0;
+        }
+
+        if (_adaptiveBadFrames >= 2 && ViewDistance > 1)
+        {
+            ApplyViewDistance(ViewDistance - 1);
+            _adaptiveBadFrames = 0;
+        }
+        else if (_adaptiveGoodFrames >= 4 && ViewDistance < 4)
+        {
+            ApplyViewDistance(ViewDistance + 1);
+            _adaptiveGoodFrames = 0;
+        }
+    }
+
     private void UpdateViewDistanceLabel()
     {
-        _viewDistanceLabel.Text = $"{ViewDistance} Chunkringe · ca. {ViewDistance * ChunkSize} m";
+        _viewDistanceLabel.Text = $"{ViewDistance} Chunkringe · ca. {ViewDistance * ChunkSize} m" + (AutoScaleViewDistance ? " · automatisch" : " · manuell");
     }
 
     private Vector2I GetPlayerChunk()
@@ -906,7 +958,7 @@ public partial class Main : Node3D
         float forward = z < ChunkSize ? heights[x, z + 1] : GetHeight(worldX, worldZ + 1);
         float slope = Mathf.Max(Mathf.Abs(right - left), Mathf.Abs(forward - back)) * 0.5f;
 
-        Color grass = GetGrassColor(worldX, worldZ);
+            Color grass = GetGrassColor(worldX, worldZ) * 0.78f;
         float groundVariation = _surfaceNoise.GetNoise2D(worldX, worldZ);
         Color soil = new(0.30f, 0.19f, 0.105f);
         grass = grass.Lerp(soil, Mathf.Clamp(0.08f + groundVariation * 0.12f, 0.0f, 0.22f));
@@ -1037,8 +1089,8 @@ public partial class Main : Node3D
             if (SurvivalGameplay.IsResourceConsumed(treeId))
                 continue;
             float biome = _biomeNoise.GetNoise2D(worldX, worldZ);
-            double density = biome < -0.42f ? 0.10 : biome < -0.18f ? 0.20 :
-                biome > 0.48f ? 0.62 : biome > 0.24f ? 0.43 : 0.34;
+            double density = biome < -0.42f ? 0.08 : biome < -0.18f ? 0.14 :
+                biome > 0.48f ? 0.44 : biome > 0.24f ? 0.31 : 0.25;
             float patch = _detailNoise.GetNoise2D(worldX * 0.18f, worldZ * 0.18f);
             density *= Mathf.Lerp(0.45f, 1.35f, patch * 0.5f + 0.5f);
             if (random.NextDouble() > density)
@@ -1513,8 +1565,8 @@ public partial class Main : Node3D
             transforms.Add(new Transform3D(
                 Basis.FromScale(scale),
                 origin + offsets[i] * matureScale + jitter));
-            float shade = 0.84f + (float)random.NextDouble() * 0.25f;
-            colors.Add(new Color(shade, shade * (0.96f + (float)random.NextDouble() * 0.08f), shade * 0.93f));
+            float shade = 0.48f + (float)random.NextDouble() * 0.25f;
+            colors.Add(new Color(shade * 0.78f, shade, shade * 0.62f));
         }
     }
 
