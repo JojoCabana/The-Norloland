@@ -13,11 +13,13 @@ public partial class GrowingBush : Node3D
     private Color _biomeTint = Colors.White;
     private int _seed;
     private string _persistentId = "";
+    private float _initialGrowth;
 
-    public void Configure(int seed, float biome, string persistentId)
+    public void Configure(int seed, float biome, string persistentId, float initialGrowth = 0.0f)
     {
         _seed = seed;
         _persistentId = persistentId;
+        _initialGrowth = Mathf.Clamp(initialGrowth, 0.0f, 1.0f);
         _biomeTint = biome < -0.25f ? new Color(0.92f, 0.85f, 0.68f) :
             biome > 0.4f ? new Color(0.78f, 0.92f, 0.73f) : new Color(0.88f, 0.96f, 0.79f);
     }
@@ -25,7 +27,7 @@ public partial class GrowingBush : Node3D
     public override void _Ready()
     {
         ProcessMode = ProcessModeEnum.Pausable;
-        SavedGrowth.TryGetValue(_persistentId, out _growth);
+        _growth = SavedGrowth.TryGetValue(_persistentId, out float savedGrowth) ? savedGrowth : _initialGrowth;
         BuildVisual();
         UpdateGrowthScale();
     }

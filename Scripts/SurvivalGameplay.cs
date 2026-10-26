@@ -11,6 +11,8 @@ public partial class SurvivalGameplay : Node
     private Label _statusLabel = null!;
     private Label _hintLabel = null!;
     private Label _craftInventory = null!;
+    private Label _crosshair = null!;
+    private Label _targetPrompt = null!;
     private ColorRect _craftBackdrop = null!;
     private PanelContainer _craftPanel = null!;
     private bool _miningHeld;
@@ -21,6 +23,7 @@ public partial class SurvivalGameplay : Node
     private int _largeStone;
     private int _sticks;
     private int _dirt;
+    private int _stoneBlocks;
     private bool _hasAxe;
     private bool _hasShovel;
     private bool _hasPickaxe;
@@ -80,14 +83,48 @@ public partial class SurvivalGameplay : Node
 
     public override void _Process(double delta)
     {
+        UpdateAimPrompt();
         if (_miningHeld)
             UpdateMining((float)delta);
+    }
+
+    private void UpdateAimPrompt()
+    {
+        if (CraftingVisible || Input.MouseMode != Input.MouseModeEnum.Captured || !TryGetLookHit(out Godot.Collections.Dictionary hit))
+        {
+            _targetPrompt.Text = "";
+            return;
+        }
+        ResourceNode resource = GetResourceNode(hit);
+        if (resource != null)
+        {
+            _targetPrompt.Text = resource.ResourceKind switch
+            {
+                "bush" => "E · Stöcke sammeln",
+                "stone_deposit" => _hasPickaxe ? "Linksklick halten · Fels abbauen" : "Fels · Spitzhacke nötig",
+                _ => "E · Aufheben"
+            };
+            return;
+        }
+        Node collider = hit.ContainsKey("collider") ? hit["collider"].AsGodotObject() as Node : null;
+        if (collider is StaticBody3D body && body.Name == "TerrainCollision")
+        {
+            Vector3 position = (Vector3)hit["position"];
+            bool rock = _main.IsRockLayerAt(position.X, position.Z);
+            _targetPrompt.Text = rock
+                ? (_hasPickaxe ? "Linksklick halten · Stein abbauen" : "Stein · Spitzhacke nötig")
+                : "Linksklick halten · Erde abbauen";
+            return;
+        }
+        _targetPrompt.Text = "";
     }
 
     public void ShowCraftingMenu()
     {
         _craftPanel.Visible = true;
         _craftBackdrop.Visible = true;
+        _crosshair.Visible = false;
+        _targetPrompt.Visible = false;
         _main.SetCraftingOverlayOpen(true);
         RefreshInventoryText();
     }
@@ -96,7 +133,17 @@ public partial class SurvivalGameplay : Node
     {
         _craftPanel.Visible = false;
         _craftBackdrop.Visible = false;
+        _crosshair.Visible = true;
+        _targetPrompt.Visible = true;
         _main.SetCraftingOverlayOpen(false);
+    }
+
+    public void ToggleCraftingMenu()
+    {
+        if (CraftingVisible)
+            HideCraftingMenu();
+        else
+            ShowCraftingMenu();
     }
 
     private void CreateInterface()
@@ -121,6 +168,31 @@ public partial class SurvivalGameplay : Node
         _hintLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.90f, 0.70f));
         _hintLabel.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.9f));
         layer.AddChild(_hintLabel);
+
+        var centerHud = new CenterContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        centerHud.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        layer.AddChild(centerHud);
+        var centerStack = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        centerStack.AddThemeConstantOverride("separation", 3);
+        centerHud.AddChild(centerStack);
+        _crosshair = new Label
+        {
+            Text = "+",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _crosshair.AddThemeFontSizeOverride("font_size", 24);
+        _crosshair.AddThemeColorOverride("font_color", Colors.White);
+        _crosshair.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.95f));
+        centerStack.AddChild(_crosshair);
+        _targetPrompt = new Label
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        _targetPrompt.AddThemeColorOverride("font_color", new Color(1.0f, 0.95f, 0.78f));
+        _targetPrompt.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.95f));
+        centerStack.AddChild(_targetPrompt);
 
         _craftBackdrop = new ColorRect
         {
@@ -162,27 +234,28 @@ public partial class SurvivalGameplay : Node
         var content = new VBoxContainer();
         content.AddThemeConstantOverride("separation", 8);
         _craftPanel.AddChild(content);
-        var title = new Label { Text = "RUCKSACK & STEINWERKZEUGE", HorizontalAlignment = HorizontalAlignment.Center };
+        var title = new Label { Text = "INVENTAR & HERSTELLEN  ·  I", HorizontalAlignment = HorizontalAlignment.Center };
         title.AddThemeFontSizeOverride("font_size", 22);
         content.AddChild(title);
         _craftInventory = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
         content.AddChild(_craftInventory);
         content.AddChild(new Label
         {
-            Text = "Axt und Schaufel: je 1 Stock + 1 mittlerer Stein + 1 Schlagstein.\nSpitzhacke: 1 Stock + 1 großer Stein + 1 Schlagstein.\nSteine klopfen und Spalten verbraucht jeweils den Schlagstein.",
+            Text = "Abgebaute Erde und Steinblöcke landen hier im Inventar.\nAxt und Schaufel: je 1 Stock + 1 mittlerer Stein + 1 Schlagstein.\nSpitzhacke: 1 Stock + 1 großer Stein + 1 Schlagstein.",
             AutowrapMode = TextServer.AutowrapMode.WordSmart
         });
         content.AddChild(CreateCraftButton("Steinaxt herstellen", () => CraftTool("axe")));
         content.AddChild(CreateCraftButton("Steinschaufel herstellen", () => CraftTool("shovel")));
         content.AddChild(CreateCraftButton("Steinspitzhacke herstellen", () => CraftTool("pickaxe")));
         content.AddChild(CreateCraftButton("Großen Stein in 2 mittlere spalten", SplitLargeStone));
-        content.AddChild(CreateCraftButton("Schließen  ·  Esc", HideCraftingMenu));
+        content.AddChild(CreateCraftButton("Schließen  ·  I / Esc", HideCraftingMenu));
         AddChild(layer);
 
         _craftBackdrop.ZIndex = 1;
         center.ZIndex = 2;
         _statusLabel.ZIndex = 0;
         _hintLabel.ZIndex = 0;
+        centerHud.ZIndex = 0;
     }
 
     private static Button CreateCraftButton(string text, Action callback)
@@ -200,7 +273,7 @@ public partial class SurvivalGameplay : Node
     private void RefreshInventoryText()
     {
         if (_craftInventory != null)
-            _craftInventory.Text = $"Stöcke: {_sticks}   Schlagsteine: {_smallStone}\nMittlere Steine: {_mediumStone}   Große Steine: {_largeStone}\nErde: {_dirt}\nWerkzeuge: {(_hasAxe ? "Axt " : "")}{(_hasShovel ? "Schaufel " : "")}{(_hasPickaxe ? "Spitzhacke" : "Noch keine")}";
+            _craftInventory.Text = $"Stöcke: {_sticks}   Schlagsteine: {_smallStone}\nMittlere Steine: {_mediumStone}   Große Steine: {_largeStone}\nErde: {_dirt}   Steinblöcke: {_stoneBlocks}\nWerkzeuge: {(_hasAxe ? "Axt " : "")}{(_hasShovel ? "Schaufel " : "")}{(_hasPickaxe ? "Spitzhacke" : "Noch keine")}";
         if (_statusLabel != null)
             _statusLabel.Text = $"Werkzeug: {_currentTool}  (1 Hand · 2 Schaufel · 3 Spitzhacke · 4 Axt)\nStöcke {_sticks}  |  Schlagsteine {_smallStone}  |  mittlere Steine {_mediumStone}  |  große Steine {_largeStone}";
     }
@@ -217,7 +290,7 @@ public partial class SurvivalGameplay : Node
         };
         if (!available)
         {
-            _hintLabel.Text = $"Du hast noch keine {tool switch { "Shovel" => "Schaufel", "Pickaxe" => "Spitzhacke", _ => "Axt" }}. Stelle sie mit C her.";
+            _hintLabel.Text = $"Du hast noch keine {tool switch { "Shovel" => "Schaufel", "Pickaxe" => "Spitzhacke", _ => "Axt" }}. Stelle sie mit I her.";
             return;
         }
         _currentTool = tool;
@@ -273,7 +346,7 @@ public partial class SurvivalGameplay : Node
             if (!_hasPickaxe || _currentTool != "Pickaxe")
             {
                 _mineProgress = 0.0f;
-                _hintLabel.Text = "Felsgestein: Dafür brauchst du eine Spitzhacke (C).";
+                _hintLabel.Text = "Felsgestein: Dafür brauchst du eine Spitzhacke (I).";
                 return;
             }
             _mineProgress += delta;
@@ -299,23 +372,40 @@ public partial class SurvivalGameplay : Node
         var collider = hit["collider"].AsGodotObject() as Node;
         if (collider is StaticBody3D body && body.Name == "TerrainCollision")
         {
-            if (_currentTool != "Hand" && _currentTool != "Shovel")
+            Vector3 position = (Vector3)hit["position"];
+            bool rockLayer = _main.IsRockLayerAt(position.X, position.Z);
+            if (rockLayer && (!_hasPickaxe || _currentTool != "Pickaxe"))
+            {
+                _mineProgress = 0.0f;
+                _hintLabel.Text = "Stein abbauen: Dafür brauchst du eine Spitzhacke (I).";
+                return;
+            }
+            if (!rockLayer && _currentTool != "Hand" && _currentTool != "Shovel")
             {
                 _mineProgress = 0.0f;
                 _hintLabel.Text = "Erde gräbst du mit der Hand oder schneller mit der Schaufel.";
                 return;
             }
-            float required = _currentTool == "Shovel" ? 0.85f : 3.2f;
+            float required = rockLayer ? 2.4f : _currentTool == "Shovel" ? 0.85f : 3.2f;
             _mineProgress += delta;
-            _hintLabel.Text = $"Erde lösen  [{Mathf.Clamp(_mineProgress / required * 100.0f, 0, 100):F0}%]";
+            _hintLabel.Text = (rockLayer ? "Stein lösen" : "Erde lösen") + $"  [{Mathf.Clamp(_mineProgress / required * 100.0f, 0, 100):F0}%]";
             if (_mineProgress >= required)
             {
                 _mineProgress -= required;
-                Vector3 position = (Vector3)hit["position"];
-                float radius = _currentTool == "Shovel" ? 1.45f : 1.0f;
-                float depth = _currentTool == "Shovel" ? 0.16f : 0.07f;
-                _main.DigGroundAt(position, radius, depth);
-                _dirt++;
+                if (rockLayer)
+                {
+                    _main.DigGroundAt(position, 0.9f, 0.08f);
+                    _stoneBlocks++;
+                    _hintLabel.Text = "+1 Steinblock im Inventar.";
+                }
+                else
+                {
+                    float radius = _currentTool == "Shovel" ? 1.45f : 1.0f;
+                    float depth = _currentTool == "Shovel" ? 0.16f : 0.07f;
+                    _main.DigGroundAt(position, radius, depth);
+                    _dirt++;
+                    _hintLabel.Text = "+1 Erde im Inventar.";
+                }
                 RefreshInventoryText();
             }
             return;
