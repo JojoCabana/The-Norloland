@@ -5,7 +5,7 @@ using System.Linq;
 
 public partial class Main : Node3D
 {
-    public const string AppVersion = "0.1.11";
+    public const string AppVersion = "0.2.0";
 
     private sealed class ChunkBuildJob
     {
@@ -89,6 +89,7 @@ public partial class Main : Node3D
         AddInputAction("jump", Key.Space);
         AddInputAction("pause_menu", Key.Escape);
 
+        if(OS.GetCmdlineUserArgs().Contains("--landscape-demo")) { WorldSeed=741932;AutoScaleViewDistance=false; }
         WorldSeed = WorldSave.Load(WorldSeed);
         RestoreTerrainChanges();
 
@@ -196,6 +197,7 @@ public partial class Main : Node3D
         _shrubLeafMesh = CreateShrubLeafMesh();
         _flowerPetalMesh = CreateFlowerPetalMesh();
 
+        InitializeNature();
         CreateLighting();
         CreatePlayer();
         CreateHud();
@@ -250,7 +252,10 @@ public partial class Main : Node3D
                 UpdateChunkTargets(false);
 
             AdvanceChunkBuild();
+            TickVolumeTerrain();
         }
+
+        TickLandscapeDemo(delta);
 
         // Text layout and terrain diagnostics need not run at render frequency.
         _hudRefreshTimer -= delta;
@@ -499,12 +504,15 @@ public partial class Main : Node3D
         var worldEnvironment = new WorldEnvironment();
         var environment = new Godot.Environment
         {
-            BackgroundMode = Godot.Environment.BGMode.Color,
+            BackgroundMode = Godot.Environment.BGMode.Sky,
+            Sky = new Sky { SkyMaterial = new ProceduralSkyMaterial {
+                SkyTopColor=new Color(0.22f,0.43f,0.69f),SkyHorizonColor=new Color(0.75f,0.82f,0.86f),
+                GroundHorizonColor=new Color(0.75f,0.82f,0.86f),GroundBottomColor=new Color(0.17f,0.21f,0.16f)} },
             BackgroundColor = new Color(0.16f, 0.22f, 0.20f),
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
             AmbientLightColor = new Color(0.52f, 0.58f, 0.54f),
-            AmbientLightEnergy = 0.38f,
-            TonemapMode = Godot.Environment.ToneMapper.Filmic,
+            AmbientLightEnergy = 0.48f,
+            TonemapMode = Godot.Environment.ToneMapper.Aces,
             FogEnabled = true,
             FogLightColor = new Color(0.43f, 0.47f, 0.44f),
             FogDensity = 0.006f,
@@ -518,7 +526,7 @@ public partial class Main : Node3D
         {
             Name = "Sun",
             RotationDegrees = new Vector3(-48, -32, 0),
-            LightEnergy = 0.72f,
+            LightEnergy = 0.95f,
             LightColor = new Color(1.0f, 0.86f, 0.66f),
             ShadowEnabled = true
         };
@@ -893,6 +901,8 @@ public partial class Main : Node3D
         collision.AddChild(terrainCollisionShape);
         chunk.AddChild(collision);
         _terrainColliders[coordinate] = terrainCollisionShape;
+        _volumeReady.Remove(coordinate);
+        _volumeDirty.Add(coordinate);
 
         if (_waterLabGround.Count > 0 && _waterLabChunks.Contains(coordinate))
             return chunk;
@@ -958,33 +968,7 @@ public partial class Main : Node3D
 
     public void DigGroundAt(Vector3 worldPosition, float radius, float depth)
     {
-        int centerX = Mathf.RoundToInt(worldPosition.X);
-        int centerZ = Mathf.RoundToInt(worldPosition.Z);
-        int extent = Mathf.CeilToInt(radius);
-        for (int x = centerX - extent; x <= centerX + extent; x++)
-        for (int z = centerZ - extent; z <= centerZ + extent; z++)
-        {
-            float distance = (new Vector2(x, z) - new Vector2(worldPosition.X, worldPosition.Z)).Length();
-            if (distance > radius) continue;
-            float falloff = 1.0f - distance / radius;
-            falloff = falloff * falloff * (3.0f - 2.0f * falloff);
-            var key = new Vector2I(x, z);
-            _excavationDepth.TryGetValue(key, out float existingDepth);
-            _excavationDepth[key] = Mathf.Min(existingDepth + depth * falloff, 2.2f);
-            _grassCover[key] = 0.0f;
-        }
-
-        SaveWorldChanges();
-        foreach (Vector2I coordinate in _chunks.Keys.ToArray())
-        {
-            float minX = coordinate.X * ChunkSize - radius - 1.0f;
-            float maxX = (coordinate.X + 1) * ChunkSize + radius + 1.0f;
-            float minZ = coordinate.Y * ChunkSize - radius - 1.0f;
-            float maxZ = (coordinate.Y + 1) * ChunkSize + radius + 1.0f;
-            if (worldPosition.X < minX || worldPosition.X > maxX || worldPosition.Z < minZ || worldPosition.Z > maxZ)
-                continue;
-            RefreshTerrainChunk(coordinate);
-        }
+        ExcavateVolume(worldPosition, Mathf.Clamp(radius * 0.5f, 0.55f, 0.8f));
     }
 
     private void RestoreTerrainChanges()
@@ -1016,7 +1000,12 @@ public partial class Main : Node3D
         WorldSave.Save();
     }
 
-    public override void _ExitTree() => SaveWorldChanges();
+    public override void _ExitTree()
+    {
+        _closing=true;
+        _volumeTask?.GetAwaiter().GetResult();
+        SaveWorldChanges();
+    }
 
     public void RemoveTreeAt(Vector3 worldPosition, string persistentId)
     {
@@ -1058,22 +1047,16 @@ public partial class Main : Node3D
 
     private void RefreshTerrainChunk(Vector2I coordinate, bool refreshCollision = true)
     {
-        if (!_terrainMeshes.TryGetValue(coordinate, out MeshInstance3D terrain) ||
-            (refreshCollision && !_terrainColliders.ContainsKey(coordinate)))
-            return;
-
-        float[,] heights = CreateTerrainHeightGrid(coordinate);
-        if (_chunkBuildJob != null && _chunkBuildJob.Coordinate == coordinate)
-            _chunkBuildJob.Heights = heights;
-        terrain.Mesh = CreateTerrainMesh(coordinate, heights);
-        if (refreshCollision && _terrainColliders.TryGetValue(coordinate, out CollisionShape3D collider))
+        if (!_terrainMeshes.TryGetValue(coordinate, out var terrain)) return;
+        if (!_waterLabChunks.Contains(coordinate)) { _volumeDirty.Add(coordinate); return; }
+        var heights=CreateTerrainHeightGrid(coordinate);
+        terrain.Position=Vector3.Zero;
+        terrain.MaterialOverride=_terrainMaterial;
+        terrain.Mesh=CreateTerrainMesh(coordinate,heights);
+        if (_terrainColliders.TryGetValue(coordinate,out var collider))
         {
-            collider.Shape = new HeightMapShape3D
-            {
-                MapWidth = ChunkSize + 1,
-                MapDepth = ChunkSize + 1,
-                MapData = CreateHeightMapData(heights)
-            };
+            collider.Position=new Vector3(ChunkSize*.5f,0,ChunkSize*.5f);
+            collider.Shape=new HeightMapShape3D {MapWidth=ChunkSize+1,MapDepth=ChunkSize+1,MapData=CreateHeightMapData(heights)};
         }
     }
 
@@ -1280,6 +1263,7 @@ public partial class Main : Node3D
         var trunkTransforms = new List<Transform3D>[4];
         var leafTransforms = new List<Transform3D>[4];
         var leafColors = new List<Color>[4];
+        var natureTransforms = new List<Transform3D>[] {new(),new()};
         var treeCollisionShapes = new List<CollisionShape3D>();
         for (int type = 0; type < 4; type++)
         {
@@ -1322,6 +1306,9 @@ public partial class Main : Node3D
                 : 1.65f + (float)random.NextDouble() * 0.45f;
             float heightScale = 0.90f + (float)random.NextDouble() * 0.20f;
             float actualTrunkHeight = trunkHeight * matureScale * heightScale;
+            int species=treeType==1?1:0;
+            float assetScale=species==1?0.85f:1.0f;
+            natureTransforms[species].Add(new Transform3D(Basis.FromEuler(new Vector3(0,(float)(attempt*2.399963),0)).Scaled(Vector3.One*assetScale),new Vector3(px,SampleTerrainHeight(heights,px,pz),pz)));
             float trunkThickness = 0.92f + matureScale * 0.26f;
             float leanX = ((float)random.NextDouble() - 0.5f) * 0.08f;
             float leanZ = ((float)random.NextDouble() - 0.5f) * 0.08f;
@@ -1349,8 +1336,8 @@ public partial class Main : Node3D
             chunk.AddChild(treeCollision);
         }
 
-        for (int type = 0; type < 4; type++)
-            AddTreeInstances(chunk, type, trunkTransforms[type], leafTransforms[type], leafColors[type]);
+        AddNatureTrees(chunk,natureTransforms);
+
     }
 
     private int ChooseTreeType(float biome, int worldX, int worldZ, Random random)
@@ -1413,8 +1400,7 @@ public partial class Main : Node3D
         var tallColors = new List<Color>(tallCount);
         AddGrassPatches(heights, random, shortCount, 0.72f, 1.22f, shortTransforms, shortColors);
         AddGrassPatches(heights, random, tallCount, 0.72f, 1.18f, tallTransforms, tallColors);
-        AddColoredMultiMesh(chunk, "ShortGrass", _shortGrassMesh, _grassMaterial, shortTransforms, shortColors);
-        AddColoredMultiMesh(chunk, "TallGrass", _grassMesh, _grassMaterial, tallTransforms, tallColors);
+        AddNatureGrass(chunk,shortTransforms,tallTransforms);
     }
 
     private void AddGrassPatches(float[,] heights, Random random, int desired, float minScale, float maxScale,

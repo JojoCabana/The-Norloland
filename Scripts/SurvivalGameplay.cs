@@ -161,7 +161,7 @@ public partial class SurvivalGameplay : Node
         if (collider is StaticBody3D body && body.Name == "TerrainCollision")
         {
             Vector3 position = (Vector3)hit["position"];
-            bool rock = _main.IsRockLayerAt(position.X, position.Z);
+            bool rock = _main.IsRockLayerAt(position);
             _targetPrompt.Text = rock
                 ? (_hasPickaxe ? "Linksklick halten · Stein abbauen" : "Stein · Spitzhacke nötig")
                 : "Linksklick halten · Erde abbauen";
@@ -390,7 +390,7 @@ public partial class SurvivalGameplay : Node
         WorldSave.Current.Inventory["_hasShovel"] = _hasShovel ? 1 : 0;
         WorldSave.Current.Inventory["_hasPickaxe"] = _hasPickaxe ? 1 : 0;
         if (_craftInventory != null)
-            _craftInventory.Text = $"Holz: {_wood}   Setzlinge: {_saplings}\nStöcke: {_sticks}   Kleine Steine: {_smallStone}   Große Steine: {_largeStone}\nErde: {_dirt}   Steinblöcke: {_stoneBlocks}\nWerkzeuge: {(_hasAxe ? "Axt " : "")}{(_hasShovel ? "Schaufel " : "")}{(_hasPickaxe ? "Spitzhacke" : "Noch keine")}";
+            _craftInventory.Text = $"Holz: {_wood}   Setzlinge: {_saplings}\nStöcke: {_sticks}   Kleine Steine: {_smallStone}   Große Steine: {_largeStone}\nErde: {_dirt}   Steinblöcke: {_stoneBlocks}\nMaterialvolumen: {WorldSave.Current.MaterialVolumes.GetValueOrDefault("earth")*1000:F0} L Erde · {WorldSave.Current.MaterialVolumes.GetValueOrDefault("sand")*1000:F0} L Sand · {WorldSave.Current.MaterialVolumes.GetValueOrDefault("stone")*1000:F0} L Fels · {WorldSave.Current.MaterialVolumes.GetValueOrDefault("iron_ore")*1000:F0} L Eisenerz\nWerkzeuge: {(_hasAxe ? "Axt " : "")}{(_hasShovel ? "Schaufel " : "")}{(_hasPickaxe ? "Spitzhacke" : "Noch keine")}";
         RefreshSlots();
         if (_statusLabel != null)
             _statusLabel.Text = $"Werkzeug: {_currentTool}  (1 Hand · 2 Schaufel · 3 Spitzhacke · 4 Axt)\nStöcke {_sticks}  |  kleine Steine {_smallStone}  |  große Steine {_largeStone}";
@@ -668,7 +668,7 @@ public partial class SurvivalGameplay : Node
         if (collider is StaticBody3D body && body.Name == "TerrainCollision")
         {
             Vector3 position = (Vector3)hit["position"];
-            bool rockLayer = _main.IsRockLayerAt(position.X, position.Z);
+            bool rockLayer = _main.IsRockLayerAt(position);
             if (rockLayer && (!_hasPickaxe || _currentTool != "Pickaxe"))
             {
                 _mineProgress = 0.0f;
@@ -687,19 +687,12 @@ public partial class SurvivalGameplay : Node
             if (_mineProgress >= required)
             {
                 _mineProgress -= required;
-                if (rockLayer)
+                Vector3 normal=(Vector3)hit["normal"];
+                double removed=_main.ExcavateVolume(position-normal*0.22f,_currentTool=="Shovel"?0.75f:0.55f);
+                if(removed>0)
                 {
-                    _main.DigGroundAt(position, 0.9f, 0.08f);
-                    _stoneBlocks++;
-                    _hintLabel.Text = "+1 Steinblock im Inventar.";
-                }
-                else
-                {
-                    float radius = _currentTool == "Shovel" ? 1.45f : 1.0f;
-                    float depth = _currentTool == "Shovel" ? 0.16f : 0.07f;
-                    _main.DigGroundAt(position, radius, depth);
-                    _dirt++;
-                    _hintLabel.Text = "+1 Erde im Inventar.";
+                    if(rockLayer)_stoneBlocks++;else _dirt++;
+                    _hintLabel.Text=$"{removed*1000:F0} Liter Material aufgenommen.";
                 }
                 RefreshInventoryText();
             }

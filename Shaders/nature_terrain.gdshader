@@ -66,6 +66,7 @@ void fragment() {
 	float strata = sin(world_pos.y*3.2+sin(world_pos.x*0.16)+sin(world_pos.z*0.13))*0.035;
 	vec3 stone = vec3(0.28,0.29,0.275)*(0.72+dot(earth,vec3(0.22)));
 	ALBEDO = mix(ALBEDO,stone+vec3(strata),COLOR.a);
+	ALBEDO = mix(ALBEDO,vec3(0.34,0.16,0.065)*(0.85+strata),COLOR.a*COLOR.b);
 	vec3 detail = mix(tri_normal(grass_normal,p,w,n),tri_normal(soil_normal,p*0.8,w,n),soil);
 	detail = normalize(mix(detail,tri_normal(sand_normal,p,w,n),sand));
 	NORMAL = normalize((VIEW_MATRIX*vec4(normalize(mix(n,detail,mix(0.32,0.16,COLOR.a))),0.0)).xyz);

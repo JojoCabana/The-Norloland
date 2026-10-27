@@ -68,6 +68,7 @@ public partial class PlayerController : CharacterBody3D
 
     public override void _PhysicsProcess(double delta)
     {
+        if(GetParent() is Main world && !world.TerrainReadyAt(GlobalPosition)) { Velocity=Vector3.Zero; return; }
         Vector3 velocity = Velocity;
 
         if (!IsOnFloor())

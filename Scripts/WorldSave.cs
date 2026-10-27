@@ -25,6 +25,9 @@ public static class WorldSave
         };
         public List<Drop> Drops { get; set; } = new();
         public Dictionary<string, int> Health { get; set; } = new();
+        public List<VolumeTerrain.Cut> Cuts { get; set; } = new();
+        public List<VolumeTerrain.Parcel> Parcels { get; set; } = new();
+        public Dictionary<string,double> MaterialVolumes { get; set; } = new();
         public int Format { get; set; } = 1;
         public int Seed { get; set; }
         public Dictionary<string, float> Depth { get; set; } = new();
@@ -63,6 +66,12 @@ public static class WorldSave
                     loaded.Depth == null || loaded.Cover == null || loaded.Consumed == null ||
                     loaded.Growth == null || loaded.Inventory == null)
                     throw new InvalidDataException("Invalid world save.");
+                loaded.Cuts ??= new();
+                loaded.Parcels ??= new();
+                loaded.MaterialVolumes ??= new();
+                foreach(var cut in loaded.Cuts)
+                    if(cut==null || !float.IsFinite(cut.X) || !float.IsFinite(cut.Y) || !float.IsFinite(cut.Z) || !float.IsFinite(cut.Radius) || cut.Radius<=0 || cut.Radius>4)
+                        throw new InvalidDataException("Invalid terrain cut.");
                 loaded.Slots ??= new List<string>();
                 loaded.Vessels ??= new Data().Vessels;
                 if (loaded.Vessels.Count < 2) loaded.Vessels = new Data().Vessels;
