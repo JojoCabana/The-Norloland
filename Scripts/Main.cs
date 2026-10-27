@@ -202,6 +202,8 @@ public partial class Main : Node3D
         _survival.Initialize(this, _player);
         CreateMenus();
         UpdateChunkTargets(true);
+        if (OS.GetCmdlineUserArgs().Contains("--water-preview"))
+            ToggleWaterLabor();
     }
 
     public override void _Process(double delta)

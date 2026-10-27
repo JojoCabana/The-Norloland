@@ -45,6 +45,19 @@ jobs:
         if: failure()
         run: cat /home/runner/.local/share/godot/mono/build_logs/*_Debug/msbuild_log.txt
 
+      - name: Render water preview
+        run: |
+          mkdir -p build
+          timeout 90s xvfb-run -a godot --path . --rendering-method gl_compatibility -- --water-preview
+
+      - name: Upload water preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: Water-Preview
+          path: build/water-preview.png
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Export Windows build
         run: |
           mkdir -p build

@@ -4,6 +4,8 @@ using System;
 public partial class WaterSandbox : Node3D
 {
     public Main OwnerWorld { get; set; }
+    private bool _capturePreview;
+    private int _previewFrames;
     private const int Size = 20;
     private const double Tick = 0.05;
     private WaterGrid _grid;
@@ -75,6 +77,12 @@ public partial class WaterSandbox : Node3D
         layer.AddChild(_flare); _flare.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         var panel = new PanelContainer { Position = new Vector2(14, 14), MouseFilter = Control.MouseFilterEnum.Ignore };
         _hud = new Label { MouseFilter = Control.MouseFilterEnum.Ignore }; panel.AddChild(_hud); layer.AddChild(panel);
+        _capturePreview = Array.IndexOf(OS.GetCmdlineUserArgs(), "--water-preview") >= 0;
+        if (_capturePreview)
+        {
+            for (int i = 0; i < 1400; i++) _grid.Step(Tick, 0.04);
+            _raining = false;
+        }
         UpdateWater();
     }
     private void UpdateCamera()
@@ -105,6 +113,13 @@ public partial class WaterSandbox : Node3D
     }
     public override void _Process(double delta)
     {
+        if (_capturePreview && ++_previewFrames == 90)
+        {
+            string path = ProjectSettings.GlobalizePath("res://build/water-preview.png");
+            var error = GetViewport().GetTexture().GetImage().SavePng(path);
+            GD.Print("Water preview: " + path + " (" + error + ")");
+            GetTree().Quit(error == Error.Ok ? 0 : 1);
+        }
         _rain.Emitting = _raining && !_paused;
         if (!_paused)
         {
