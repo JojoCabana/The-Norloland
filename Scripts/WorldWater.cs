@@ -177,6 +177,7 @@ public partial class WorldWater : Node3D
             BuildSurface(visual, group.Value);
         }
         RefreshSnowCover(loaded);
+        OwnerWorld.UpdateStoneSnow(_grid);
         RefreshPrecipitation(loaded);
     }
     private void RefreshSnowCover(HashSet<Vector2I> loaded)

@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using System.Linq;
 
 public partial class Main
 {
@@ -55,5 +56,44 @@ public partial class Main
         material.SetShaderParameter("snow_size", (float)ChunkSize);
         material.SetShaderParameter("snow_enabled", true);
         visual.MaterialOverride = material;
+    }
+}
+
+public partial class Main
+{
+    private readonly System.Collections.Generic.Dictionary<ulong, (MeshInstance3D Visual, Material Original, ShaderMaterial Snow)> _snowStones = new();
+    private Shader _snowStoneShader;
+    public void UpdateStoneSnow(WorldWaterGrid grid)
+    {
+        foreach (var id in _snowStones.Keys.ToArray())
+            if (!GodotObject.IsInstanceValid(_snowStones[id].Visual) || !_snowStones[id].Visual.IsInsideTree()) _snowStones.Remove(id);
+        if (grid.SnowCells.Count == 0 && _snowStones.Count == 0) return;
+        foreach (var chunk in _chunks.Values)
+        foreach (Node node in chunk.GetChildren())
+        {
+            if (node is not ResourceNode resource || resource.ResourceKind is not ("small_stone" or "medium_stone" or "large_stone" or "stone_deposit")) continue;
+            foreach (Node child in resource.GetChildren())
+            {
+                if (child is not MeshInstance3D visual) continue;
+                ulong id = visual.GetInstanceId();
+                float depth = (float)grid.SnowWaterEquivalent(Mathf.FloorToInt(resource.GlobalPosition.X), Mathf.FloorToInt(resource.GlobalPosition.Z)) * (float)SnowClimate.DepthRatio;
+                float cover = Mathf.SmoothStep(0, .025f, depth);
+                if (cover <= 0)
+                {
+                    if (_snowStones.Remove(id, out var old)) { visual.MaterialOverride = old.Original; old.Snow.Dispose(); }
+                    continue;
+                }
+                if (!_snowStones.TryGetValue(id, out var entry))
+                {
+                    if (visual.MaterialOverride is not StandardMaterial3D original) continue;
+                    _snowStoneShader ??= GD.Load<Shader>("res://Shaders/snow_stone.gdshader");
+                    var material = new ShaderMaterial { Shader = _snowStoneShader };
+                    material.SetShaderParameter("stone_color", original.AlbedoColor);
+                    entry = (visual, original, material); _snowStones[id] = entry;
+                    visual.MaterialOverride = material;
+                }
+                entry.Snow.SetShaderParameter("snow_cover", cover);
+            }
+        }
     }
 }
