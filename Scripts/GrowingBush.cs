@@ -7,6 +7,9 @@ public partial class GrowingBush : Node3D
     private const float MatureHeight = 1.6f;
     private const float GrowthSeconds = 1800.0f;
     private static readonly Dictionary<string, float> SavedGrowth = new();
+    // Shared geometry is never mutated after construction.
+    private static Mesh _branchMesh;
+    private static Mesh _leafMesh;
     private float _growth;
     private float _growthSaveTimer;
     private Node3D _visual = null!;
@@ -30,6 +33,7 @@ public partial class GrowingBush : Node3D
         _growth = SavedGrowth.TryGetValue(_persistentId, out float savedGrowth) ? savedGrowth : _initialGrowth;
         BuildVisual();
         UpdateGrowthScale();
+        SetProcess(_growth < 1.0f);
     }
 
     public override void _Process(double delta)
@@ -44,12 +48,23 @@ public partial class GrowingBush : Node3D
             _growthSaveTimer = 0.0f;
         }
         UpdateGrowthScale();
+        if (_growth >= 1.0f)
+        {
+            SavedGrowth[_persistentId] = _growth;
+            SetProcess(false);
+        }
+    }
+
+    public override void _ExitTree()
+    {
+        SavedGrowth[_persistentId] = _growth;
     }
 
     public int Harvest()
     {
         int sticks = 1 + Mathf.RoundToInt(_growth * 3.0f);
         _growth = 0.0f;
+        SetProcess(true);
         SavedGrowth[_persistentId] = _growth;
         UpdateGrowthScale();
         return sticks;
@@ -109,7 +124,7 @@ public partial class GrowingBush : Node3D
             TextureRepeat = true,
             TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmaps
         };
-        var branchMesh = new CylinderMesh { TopRadius = 0.014f, BottomRadius = 0.035f, Height = 1.0f, RadialSegments = 5 };
+        var branchMesh = _branchMesh ??= new CylinderMesh { TopRadius = 0.014f, BottomRadius = 0.035f, Height = 1.0f, RadialSegments = 5 };
         AddMultiMesh("BushTwigs", branchMesh, barkMaterial, branchTransforms);
 
         var leafMaterial = new StandardMaterial3D
@@ -121,7 +136,7 @@ public partial class GrowingBush : Node3D
             TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmaps,
             CullMode = BaseMaterial3D.CullModeEnum.Disabled
         };
-        AddMultiMesh("BushLeaves", CreateLeafMesh(), leafMaterial, leafTransforms);
+        AddMultiMesh("BushLeaves", _leafMesh ??= CreateLeafMesh(), leafMaterial, leafTransforms);
 
         var pickArea = new ResourceNode
         {

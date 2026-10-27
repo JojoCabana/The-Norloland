@@ -52,6 +52,10 @@ public partial class Main : Node3D
     private Mesh _shortGrassMesh = null!;
     private Mesh _shrubLeafMesh = null!;
     private Mesh _flowerPetalMesh = null!;
+    // Mesh geometry is immutable; each chunk retains its own instance transforms.
+    private readonly Mesh[] _treeTrunkMeshes = new Mesh[4];
+    private Mesh _treeLeafMesh;
+    private double _hudRefreshTimer;
     private bool _escapeWasPressed;
     private float _grassRegrowthTimer;
     private float _adaptiveViewTimer;
@@ -228,6 +232,12 @@ public partial class Main : Node3D
                 break;
             }
         }
+
+        // Text layout and terrain diagnostics need not run at render frequency.
+        _hudRefreshTimer -= delta;
+        if (_hudRefreshTimer > 0.0)
+            return;
+        _hudRefreshTimer = 0.2;
 
         if (_hud != null)
         {
@@ -1576,7 +1586,7 @@ public partial class Main : Node3D
             return;
 
         float trunkHeight = type switch { 1 => 5.0f, 2 => 4.4f, 3 => 4.3f, _ => 3.4f };
-        var trunkMesh = new CylinderMesh
+        var trunkMesh = _treeTrunkMeshes[type] ??= new CylinderMesh
         {
             TopRadius = type == 2 ? 0.08f : type == 1 ? 0.11f : 0.15f,
             BottomRadius = type == 2 ? 0.13f : type == 1 ? 0.17f : 0.22f,
@@ -1599,7 +1609,7 @@ public partial class Main : Node3D
             MaterialOverride = _trunkMaterials[type]
         });
 
-        var leafMesh = new SphereMesh
+        var leafMesh = _treeLeafMesh ??= new SphereMesh
         {
             Radius = 1.0f,
             Height = 2.0f,
