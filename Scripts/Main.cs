@@ -5,7 +5,7 @@ using System.Linq;
 
 public partial class Main : Node3D
 {
-    public const string AppVersion = "0.1.5";
+    public const string AppVersion = "0.1.6";
 
     private sealed class ChunkBuildJob
     {
@@ -68,6 +68,8 @@ public partial class Main : Node3D
     private readonly Mesh[] _treeTrunkMeshes = new Mesh[4];
     private Mesh _treeLeafMesh;
     private double _hudRefreshTimer;
+    private WaterSandbox _waterLab;
+    private bool _debugBeforeWaterLab;
     private bool _escapeWasPressed;
     private float _grassRegrowthTimer;
     private double _saveTimer;
@@ -252,7 +254,7 @@ public partial class Main : Node3D
             _hud.Text = "THE NORLOLAND v" + AppVersion + "  |  Seed: " + WorldSeed +
                         "  |  Chunks: " + _chunks.Count +
                         (WorldSave.Failed || WorldSave.WriteFailed ? "  |  SPEICHERFEHLER" : "  |  Autosave") +
-                        "  |  WASD/Space  |  E Sammeln  |  Linksklick Abbau  |  I Inventar  |  1–4 Werkzeuge  |  F3 Debug  |  Esc Menü";
+                        "  |  WASD/Space  |  E Sammeln  |  Linksklick Abbau  |  I Inventar  |  1–4 Werkzeuge  |  F3 Debug  |  F7 Wasserlabor  |  Esc Menü";
         }
 
         if (_debugHud != null && _debugHud.Visible)
@@ -284,6 +286,16 @@ public partial class Main : Node3D
             return;
         }
 
+        if (key.Keycode == Key.F7)
+        {
+            ToggleWaterLabor();
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
+        if (_waterLab != null)
+            return;
+
         if (key.Keycode == Key.F3)
         {
             _debugHud.Visible = !_debugHud.Visible;
@@ -309,6 +321,39 @@ public partial class Main : Node3D
             Input.MouseMode = Input.MouseModeEnum.Visible;
             GetViewport().SetInputAsHandled();
         }
+    }
+
+    public void ToggleWaterLabor()
+    {
+        if (_waterLab != null)
+        {
+            _waterLab.QueueFree();
+            _waterLab = null;
+            _player.GetNode<Camera3D>("Camera3D").Current = true;
+            _player.SetPhysicsProcess(true);
+            _player.SetProcessUnhandledInput(true);
+            _survival.SetProcessInput(true);
+            _survival.SetProcess(true);
+            _survival.SetWorldInterfaceVisible(true);
+            _hud.Visible = true;
+            _debugHud.Visible = _debugBeforeWaterLab;
+            Input.MouseMode = Input.MouseModeEnum.Captured;
+            return;
+        }
+        _survival.HideCraftingMenu();
+        _menuRoot.Visible = false;
+        GetTree().Paused = false;
+        _player.SetPhysicsProcess(false);
+        _player.SetProcessUnhandledInput(false);
+        _survival.SetProcessInput(false);
+        _survival.SetProcess(false);
+        _survival.SetWorldInterfaceVisible(false);
+        _debugBeforeWaterLab = _debugHud.Visible;
+        _hud.Visible = false;
+        _debugHud.Visible = false;
+        _waterLab = new WaterSandbox { Name = "WaterLabor", OwnerWorld = this,
+            Position = new Vector3(_player.Position.X + 30, Mathf.Max(65, _player.Position.Y + 20), _player.Position.Z) };
+        AddChild(_waterLab);
     }
 
     private void TogglePauseMenu()

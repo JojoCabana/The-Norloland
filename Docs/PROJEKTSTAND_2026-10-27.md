@@ -69,3 +69,7 @@ Der Laptop war am Ende wegen geringer Akkulaufzeit nur noch für einen kurzen Pr
 - Code-Commit 0.1.5: 0124ab63cd7c1db68166fa091f6bfbc271afc893
 
 Erfolgreicher Build/Export bestätigt Kompilierung und Paketierung, nicht die korrekte Darstellung oder das Spielgefühl. Ausführbare CI-Artefakte werden nur befristet aufbewahrt.
+
+## Nachtrag: Wasserprototyp 0.1.6
+
+Gewünscht sind langfristig Regen, Wasseransammlung und physikalisch plausibles Fließen, aufstaubares Wasser sowie später Wasserrad und Stromerzeugung. Zunächst wurde eine kleine Variante beauftragt, ergänzt um weichere Wasseroptik und Lens Flare. Auf ausdrücklichen Wunsch wird keine eigene Szene geladen: F7 erzeugt ein temporäres Wasserlabor in der bestehenden Spielwelt. Details und Grenzen: [WASSERLABOR.md](WASSERLABOR.md). Der ausführbare Stand ist jetzt 0.1.6; die zuvor beschriebene Übergabe 0.1.5 bleibt als Verlauf erhalten.

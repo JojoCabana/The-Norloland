@@ -28,6 +28,9 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Check water simulation invariants
+        run: dotnet run --project Tests/WaterGridChecks/WaterGridChecks.csproj
+
       - name: Install Godot .NET and export templates
         uses: chickensoft-games/setup-godot@v2
         with:

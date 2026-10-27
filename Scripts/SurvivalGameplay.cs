@@ -170,6 +170,12 @@ public partial class SurvivalGameplay : Node
         _targetPrompt.Text = "";
     }
 
+    public void SetWorldInterfaceVisible(bool visible)
+    {
+        foreach (Node child in GetChildren())
+            if (child is CanvasLayer layer) layer.Visible = visible;
+    }
+
     public void ShowCraftingMenu()
     {
         _craftPanel.Visible = true;

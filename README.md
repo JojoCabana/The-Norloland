@@ -1,6 +1,6 @@
 # The Norloland
 
-Current project direction, decisions and handover: [Projektstand 27.10.2026](Docs/PROJEKTSTAND_2026-10-27.md). Current app version: **0.1.5**.
+Current project direction, decisions and handover: [Projektstand 27.10.2026](Docs/PROJEKTSTAND_2026-10-27.md). Current app version: **0.1.6**.
 
 A single-player-first, procedurally generated voxel-world prototype built with **Godot 4.7.2 .NET / C#**.
 
@@ -60,3 +60,5 @@ Version 0.1.2 builds terrain and collision first, then trees, grass, flowers, sh
 ## Local persistence and inventory (0.1.2)
 
 A zero Inspector seed now resumes the last local world instead of creating a new seed every launch. Set a different explicit seed for a different world. Digging, collected resources, bush state, inventory quantities and slot layout are persisted locally under `user://worlds`. Inventory supports drag to move/swap/merge stacks and right-click to split; stacks hold up to 99 items. Extra slots are added when needed so collection never silently discards items. Player position is not yet persisted.
+
+Water prototype: press **F7** in the running world. [Controls, scope and limitations](Docs/WASSERLABOR.md).
