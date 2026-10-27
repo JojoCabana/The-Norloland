@@ -191,7 +191,7 @@ public partial class WaterSandbox : Node3D
             _hud.Text = $"WASSERLABOR v{Main.AppVersion}  ·  Testbereich in der Spielwelt\n" +
                 $"R Regen: {(_raining ? "AN" : "AUS")}   G Damm: {(_grid.DamClosed ? "ZU" : "OFFEN")}   Leertaste: Pause {(_paused ? "AN" : "AUS")}\n" +
                 "WASD Flug · Q/E runter/hoch · Shift schneller · rechte Maustaste: umsehen\n" +
-                "← → Übersicht   F Lens Flare   Rücktaste: leeren   F7 / Esc: Spielfigur\n" +
+                "F11 Vollbild   ← → Übersicht   F Lens Flare   Rücktaste: leeren   F7 / Esc: Spielfigur\n" +
                 $"Wasser: {_grid.Volume:F2} m³   Regen gesamt: {_grid.RainAdded:F2} m³\n" +
                 $"Dammkrone: {_grid.DamCrest:F2} m · {(_grid.DamClosed ? "Überlauf" : "Durchfluss")}: {_grid.LastDamFlow:F2} m³/s   Bilanzfehler: {_grid.Volume - _grid.RainAdded + _grid.Taken - _grid.Returned:E1}\n" +
                 $"V Gefäß: {WorldSave.Current.Vessels[_selectedVessel].Name}  {WorldSave.Current.Vessels[_selectedVessel].Litres:F3}/{WorldSave.Current.Vessels[_selectedVessel].CapacityLitres:F1} L · B füllen · P ausgießen\n" +

@@ -53,3 +53,7 @@ Der Testbereich startet trocken. Regen wird als gesammelter Zufluss in die mittl
 Geschlossene Dämme trennen auch die Glättung der Wasseroberfläche: Ober- und Unterwasser behalten ihren eigenen Pegel. Unterhalb der Krone endet das Wasser an den sichtbaren Wandflächen. Das HUD nennt die Höhe der Dammkrone und unterscheidet Überlauf (geschlossen) von Durchfluss (offen). Über der Krone darf Wasser weiterhin auf die andere Seite fließen. Prüfungen decken getrennte Oberflächenpegel sowie Dichtigkeit bei anhaltendem Zufluss aus beiden Richtungen ab.
 
 Freie Flugkamera im Wasserbereich: WASD bewegt in Blickrichtung bzw. seitwärts, Q/E senkt/hebt die Kamera, Umschalt beschleunigt. Rechte Maustaste halten und Maus bewegen zum Umschauen; Loslassen gibt den Mauszeiger für die Wasserauswahl frei. Pfeiltasten links/rechts kehren zur Übersicht zurück. Die Kamera funktioniert auch bei pausiertem Wasser. Damm öffnen/schließen liegt jetzt auf **G**, damit D zum Fliegen frei ist.
+
+## 0.1.11 – Vollbild
+
+Das Spiel startet im exklusiven Vollbildmodus. F11 wechselt jederzeit zwischen Fenster und exklusivem Vollbild, auch im Wasserbereich oder Pausemenü. Das Bild passt sich dem Bildschirmformat an. Automatische Vorschauaufnahmen laufen weiterhin im festen 1280×720-Fenster.

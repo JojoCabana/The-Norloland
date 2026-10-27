@@ -5,7 +5,7 @@ using System.Linq;
 
 public partial class Main : Node3D
 {
-    public const string AppVersion = "0.1.10";
+    public const string AppVersion = "0.1.11";
 
     private sealed class ChunkBuildJob
     {
@@ -205,7 +205,12 @@ public partial class Main : Node3D
         CreateMenus();
         UpdateChunkTargets(true);
         if (OS.GetCmdlineUserArgs().Contains("--water-preview"))
+        {
+            // CI captures a fixed-size window, independent of the desktop mode.
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            DisplayServer.WindowSetSize(new Vector2I(1280, 720));
             ToggleWaterLabor();
+        }
     }
 
     public override void _Process(double delta)
@@ -281,6 +286,15 @@ public partial class Main : Node3D
     {
         if (@event is not InputEventKey key || !key.Pressed || key.Echo)
             return;
+
+        if (key.PhysicalKeycode == Key.F11 || key.Keycode == Key.F11)
+        {
+            var mode = DisplayServer.WindowGetMode();
+            bool fullscreen = mode == DisplayServer.WindowMode.Fullscreen || mode == DisplayServer.WindowMode.ExclusiveFullscreen;
+            DisplayServer.WindowSetMode(fullscreen ? DisplayServer.WindowMode.Windowed : DisplayServer.WindowMode.ExclusiveFullscreen);
+            GetViewport().SetInputAsHandled();
+            return;
+        }
 
         if ((key.Keycode == Key.Escape || key.PhysicalKeycode == Key.Escape) && _survival?.CraftingVisible == true)
         {
