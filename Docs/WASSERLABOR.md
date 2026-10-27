@@ -43,3 +43,7 @@ Die Wasserberechnung in Scripts/WaterGrid.cs ist von Godot, Oberfläche und Dars
 5. F7/Escape: normale Kamera, Steuerung und Inventar wieder verfügbar; Weltänderungen bleiben erhalten.
 
 Automatische Modelltests: `dotnet run --project Tests/WaterGridChecks/WaterGridChecks.csproj`. Sie prüfen Mengenerhaltung, nichtnegative Volumen, Regenzugabe, geschlossenen/geöffneten Damm, Überlaufen und trockenes Raster. Darstellung und Eingaben müssen zusätzlich im laufenden Spiel geprüft werden.
+
+## 0.1.9 – Wasser wächst aus der Mitte
+
+Der Testbereich startet trocken. Regen wird als gesammelter Zufluss in die mittlere Zelle der Senke geleitet, statt jede Zelle zu benetzen. Das Gelände steigt in beiden Achsen an. Der Pegel steigt zuerst im Zentrum und erreicht umliegende Zellen erst über deren Bodenhöhe. Höhere Kanten halten Wasser zurück, bis sie überlaufen. Das Netz bleibt ein begrenztes, am Außenrand geschlossenes Labor; chunkübergreifende Hydrologie ist noch nicht umgesetzt. Die Oberfläche wird an der Geländeform abgeschnitten und am flachen Ufer transparent. Rücktaste leert das Becken und erhält den mittigen Zufluss.

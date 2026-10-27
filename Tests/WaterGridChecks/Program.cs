@@ -38,6 +38,27 @@ static class Checks
         Check(bowl.Litres == 0 && Math.Abs(pool.Volume - before) < 1e-10, "Pour loses water");
         var dry = new WaterGrid(4, 4); dry.Step(0.05, 0);
         Check(dry.Volume == 0, "Dry grid generates water");
+        var basin = new WaterGrid(21, 21) { DamClosed = false, RainSourceCell = 10 * 21 + 10 };
+        for (int z = 0; z < 21; z++)
+        for (int x = 0; x < 21; x++)
+            basin.Ground[z * 21 + x] = 0.1 * ((x - 10) * (x - 10) + (z - 10) * (z - 10));
+        basin.Step(0.05, 0.001);
+        Check(basin.Water[basin.RainSourceCell] > 0, "Center source stays dry");
+        Check(basin.Water[0] == 0, "Rain wets remote terrain");
+        for (int t = 0; t < 2000; t++) basin.Step(0.05, 0.001);
+        int smallArea = Array.FindAll(basin.Water, v => v > 0.008).Length;
+        Check(smallArea > 1 && basin.Water[0] == 0, "Pool does not spread locally");
+        for (int t = 0; t < 4000; t++) basin.Step(0.05, 0.001);
+        int largeArea = Array.FindAll(basin.Water, v => v > 0.008).Length;
+        Check(largeArea > smallArea && basin.Water[0] == 0, "Rising pool fails to widen or floods boundary");
+        Check(Math.Abs(basin.Volume - basin.RainAdded) < 1e-8, "Source loses water");
+        var ridge = new WaterGrid(7, 1) { DamClosed = false, RainSourceCell = 1 };
+        ridge.Ground[3] = 2;
+        for (int t = 0; t < 500; t++) ridge.Step(0.05, 0.01);
+        Check(ridge.Water[4] == 0, "Source teleports through dry ridge");
+        for (int t = 0; t < 4000; t++) ridge.Step(0.05, 0.01);
+        Check(ridge.Water[4] > 0, "Pool cannot overflow terrain ridge");
+        Console.WriteLine("PASS: center source, growing shoreline, dry perimeter and terrain overflow.");
         Console.WriteLine("PASS: conservation, nonnegative volumes, rain, closed/open dam, overflow and dry grid.");
     }
 }

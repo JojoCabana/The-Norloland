@@ -31,7 +31,7 @@ public partial class WaterSandbox : Node3D
     public override void _Ready()
     {
         Input.MouseMode = Input.MouseModeEnum.Visible;
-        _grid = new WaterGrid(Size, Size) { DamCrest = -0.7 };
+        _grid = new WaterGrid(Size, Size) { DamCrest = -0.7, RainSourceCell = 10 * Size + 9 };
         for (int z = 0; z < Size; z++)
         for (int x = 0; x < Size; x++)
         {
@@ -76,7 +76,7 @@ public partial class WaterSandbox : Node3D
         _capturePreview = Array.IndexOf(OS.GetCmdlineUserArgs(), "--water-preview") >= 0;
         if (_capturePreview)
         {
-            for (int i = 0; i < 500; i++) _grid.Step(Tick, 0.04);
+            for (int i = 0; i < 500; i++) _grid.Step(Tick, 0.004);
             _raining = false;
         }
         UpdateWater();
@@ -122,7 +122,7 @@ public partial class WaterSandbox : Node3D
     }
     private WaterGrid ResetGrid()
     {
-        var reset = new WaterGrid(Size, Size) { DamClosed = _grid.DamClosed, DamCrest = _grid.DamCrest };
+        var reset = new WaterGrid(Size, Size) { DamClosed = _grid.DamClosed, DamCrest = _grid.DamCrest, RainSourceCell = _grid.RainSourceCell };
         Array.Copy(_grid.Ground, reset.Ground, _grid.Ground.Length);
         return reset;
     }
@@ -142,7 +142,7 @@ public partial class WaterSandbox : Node3D
             bool changed = false;
             while (_accumulator >= Tick)
             {
-                _grid.Step(Tick, _raining ? 0.04 : 0);
+                _grid.Step(Tick, _raining ? 0.004 : 0);
                 _accumulator -= Tick;
                 changed = true;
             }
@@ -168,7 +168,7 @@ public partial class WaterSandbox : Node3D
                 $"Durchfluss am Damm: {_grid.LastDamFlow:F2} m³/s   Bilanzfehler: {_grid.Volume - _grid.RainAdded + _grid.Taken - _grid.Returned:E1}\n" +
                 $"V Gefäß: {WorldSave.Current.Vessels[_selectedVessel].Name}  {WorldSave.Current.Vessels[_selectedVessel].Litres:F3}/{WorldSave.Current.Vessels[_selectedVessel].CapacityLitres:F1} L · B füllen · P ausgießen\n" +
                 $"Zelle {sx},{sz}: {_grid.Water[_selectedCell] * 1000:F3} L · {_waterMessage}\n" +
-                "Beschleunigter Regen · Laborwasser temporär · Gefäßfüllung gespeichert";
+                "Regenzufluss in der Mitte · Laborwasser temporär · Gefäßfüllung gespeichert";
         }
     }
     private void UpdateWater()

@@ -9,6 +9,8 @@ public sealed class WaterGrid
     public double[] Water { get; }
     public bool DamClosed { get; set; } = true;
     public double DamCrest { get; set; } = 2.2;
+    // -1 distributes rainfall; a cell index concentrates catchment runoff at a spring.
+    public int RainSourceCell { get; set; } = -1;
     public double RainAdded { get; private set; }
     public double LastDamFlow { get; private set; }
     public double Taken { get; private set; }
@@ -40,7 +42,9 @@ public sealed class WaterGrid
             throw new ArgumentOutOfRangeException();
         Array.Clear(_delta);
         LastDamFlow = 0;
-        for (int i = 0; i < Water.Length; i++) Water[i] += rainRate * dt;
+        if (RainSourceCell < -1 || RainSourceCell >= Water.Length) throw new ArgumentOutOfRangeException(nameof(RainSourceCell));
+        if (RainSourceCell >= 0) Water[RainSourceCell] += rainRate * dt * Water.Length;
+        else for (int i = 0; i < Water.Length; i++) Water[i] += rainRate * dt;
         RainAdded += rainRate * dt * Water.Length;
         // Only positive outgoing flows are calculated. Each donor distributes at
         // most 1/4 of its old volume to each of four neighbors, so it cannot go negative.
