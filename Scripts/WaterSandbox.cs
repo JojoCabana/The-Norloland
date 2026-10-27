@@ -201,7 +201,7 @@ public partial class WaterSandbox : Node3D
     }
     private void UpdateWater()
     {
-        var surface = new SurfaceTool();
+        using var surface = new SurfaceTool();
         surface.Begin(Mesh.PrimitiveType.Triangles);
         bool any = false;
         // Clip each surface triangle against the actual terrain, rather than
@@ -210,21 +210,24 @@ public partial class WaterSandbox : Node3D
         {
             float Depth(Vector3 v) => v.Y - (OwnerWorld.GetGroundHeight(
                 GlobalPosition.X + v.X, GlobalPosition.Z + v.Z) - GlobalPosition.Y);
-            var input = new System.Collections.Generic.List<(Vector3 p, float depth)> {
-                (a, Depth(a)), (b, Depth(b)), (c, Depth(c)) };
-            var clipped = new System.Collections.Generic.List<(Vector3 p, float depth)>();
-            for (int i = 0; i < input.Count; i++)
+            // One clipping plane produces at most four vertices from a triangle.
+            // Stack buffers avoid two managed lists and their backing arrays per triangle.
+            Span<(Vector3 p, float depth)> input = stackalloc (Vector3, float)[3];
+            input[0] = (a, Depth(a)); input[1] = (b, Depth(b)); input[2] = (c, Depth(c));
+            Span<(Vector3 p, float depth)> clipped = stackalloc (Vector3, float)[4];
+            int clippedCount = 0;
+            for (int i = 0; i < input.Length; i++)
             {
-                var start = input[i]; var end = input[(i + 1) % input.Count];
+                var start = input[i]; var end = input[(i + 1) % input.Length];
                 bool inside = start.depth > 0, nextInside = end.depth > 0;
-                if (inside) clipped.Add(start);
+                if (inside) clipped[clippedCount++] = start;
                 if (inside != nextInside)
                 {
                     float t = start.depth / (start.depth - end.depth);
-                    clipped.Add((start.p.Lerp(end.p, t), 0));
+                    clipped[clippedCount++] = (start.p.Lerp(end.p, t), 0);
                 }
             }
-            if (clipped.Count < 3) return;
+            if (clippedCount < 3) return;
             any = true;
             void Vertex((Vector3 p, float depth) v)
             {
@@ -232,7 +235,7 @@ public partial class WaterSandbox : Node3D
                 surface.SetColor(new Color(Mathf.Clamp(v.depth, 0, 1), 0, 0, 1));
                 surface.AddVertex(v.p);
             }
-            for (int i = 1; i + 1 < clipped.Count; i++)
+            for (int i = 1; i + 1 < clippedCount; i++)
             {
                 Vertex(clipped[0]); Vertex(clipped[i]); Vertex(clipped[i + 1]);
             }
