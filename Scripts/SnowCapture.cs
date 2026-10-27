@@ -14,10 +14,14 @@ public partial class Main
         if (_volumeTask != null || _volumeDirty.Count > 0 || _pendingChunks.Count > 0 || _chunkBuildJob != null) return;
         _snowCaptureBusy = true;
         _player.SetPhysicsProcess(false);
-        float height = SampleOriginalSurface(8, 8);
+        float height = SampleOriginalSurface(8, 10);
+        DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+        DisplayServer.WindowSetSize(new Vector2I(1280,720));
+        GetViewport().GetWindow().ContentScaleSize = new Vector2I(1280,720);
         var camera = new Camera3D { Current = true, Fov = 72, Far = 160,
-            Position = new Vector3(8, height + 5, 23) };
-        AddChild(camera); camera.LookAt(new Vector3(8, height + 1, 8));
+            Position = new Vector3(8, height + 2, 12) };
+        AddChild(camera); camera.MakeCurrent(); camera.LookAt(new Vector3(8, SampleOriginalSurface(8,8) + .2f, 8));
+        GD.Print($"SNOW_CAMERA position={camera.GlobalPosition} rotation={camera.RotationDegrees} current={GetViewport().GetCamera3D()==camera}");
         Input.MouseMode = Input.MouseModeEnum.Visible;
         _hud.Visible = false; _debugHud.Visible = false; _survival.SetWorldInterfaceVisible(false);
         for (int i = 0; i < 30; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
