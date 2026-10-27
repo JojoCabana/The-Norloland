@@ -3,7 +3,7 @@ name: Build Windows prototype
 on:
   workflow_dispatch:
   push:
-    branches: [ "main", "perf/shared-meshes-hud" ]
+    branches: [ "main", "perf/shared-meshes-hud", "feature/world-rain" ]
     paths:
       - "**.cs"
       - "**.gdshader"
@@ -34,6 +34,9 @@ jobs:
       - name: Check water simulation invariants
         run: dotnet run --project Tests/WaterGridChecks/WaterGridChecks.csproj
 
+      - name: Check water across world chunks
+        run: dotnet run --project Tests/WorldWaterChecks/WorldWaterChecks.csproj
+
       - name: Check volumetric terrain and save invariants
         run: dotnet run --project Tests/VolumeChecks/VolumeChecks.csproj
 
@@ -53,18 +56,11 @@ jobs:
         if: failure()
         run: cat /home/runner/.local/share/godot/mono/build_logs/*_Debug/msbuild_log.txt
 
-      - name: Render water preview
+      - name: Smoke test normal world startup
         run: |
-          mkdir -p build
-          timeout 180s xvfb-run -a godot --path . --rendering-method gl_compatibility -- --water-preview
-
-      - name: Upload water preview
-        uses: actions/upload-artifact@v4
-        with:
-          name: Water-Preview
-          path: build/water-preview.png
-          if-no-files-found: error
-          retention-days: 14
+          set -o pipefail
+          timeout 120s godot --headless --path . --quit-after 20 2>&1 | tee world-startup.log
+          ! grep -E 'SCRIPT ERROR|error CS[0-9]+|Unhandled exception' world-startup.log
 
       - name: Export Windows build
         run: |

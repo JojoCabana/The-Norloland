@@ -41,7 +41,7 @@ public partial class Main
     public bool TerrainReadyAt(Vector3 position)
     {
         var coordinate=new Vector2I(Mathf.FloorToInt(position.X/ChunkSize),Mathf.FloorToInt(position.Z/ChunkSize));
-        return _chunks.ContainsKey(coordinate) && (_waterLabChunks.Contains(coordinate)||_volumeReady.Contains(coordinate));
+        return _chunks.ContainsKey(coordinate) && _volumeReady.Contains(coordinate);
     }
     public float GroundBelow(Vector3 origin)
     {
@@ -54,13 +54,13 @@ public partial class Main
     public bool IsRockLayerAt(Vector3 position)=>GroundMaterialAt(position) is "stone" or "iron_ore";
     public double ExcavateVolume(Vector3 position,float radius)
     {
-        if(_waterLab!=null)return 0; // The surface-water laboratory remains a separate test.
         var field=MakeField();
         var cut=new VolumeTerrain.Cut{X=position.X,Y=position.Y,Z=position.Z,Radius=radius};
         var parcel=field.Measure(cut);
         double amount=parcel.CubicMetres.Values.Sum();
         if(amount<=0)return 0;
         WorldSave.Current.Cuts.Add(cut);
+        _worldWater?.TerrainChanged();
         WorldSave.Current.Parcels.Add(parcel);
         foreach(var pair in parcel.CubicMetres)
         {
@@ -108,7 +108,7 @@ public partial class Main
         if(_volumeTask!=null && _volumeTask.IsCompleted)
         {
             if(_volumeTask.IsFaulted){GD.PushError(_volumeTask.Exception?.ToString());_volumeDirty.Add(_volumeCoordinate);}
-            else if(_chunks.TryGetValue(_volumeCoordinate,out var current) && current==_volumeOwner && !_waterLabChunks.Contains(_volumeCoordinate) && !_volumeDirty.Contains(_volumeCoordinate))
+            else if(_chunks.TryGetValue(_volumeCoordinate,out var current) && current==_volumeOwner && !_volumeDirty.Contains(_volumeCoordinate))
             {
                 ApplyVolumeGeometry(_volumeCoordinate,_volumeTask.Result);
                 _volumeReady.Add(_volumeCoordinate);
@@ -116,7 +116,7 @@ public partial class Main
             _volumeTask=null;
         }
         if(_volumeTask!=null || _volumeDirty.Count==0)return;
-        var valid=_volumeDirty.Where(k=>_chunks.ContainsKey(k)&&!_waterLabChunks.Contains(k)).ToArray();
+        var valid=_volumeDirty.Where(k=>_chunks.ContainsKey(k)).ToArray();
         if(valid.Length==0){_volumeDirty.Clear();return;}
         var player2=new Vector2(_player.Position.X,_player.Position.Z);
         _volumeCoordinate=valid.OrderBy(k=>(new Vector2(k.X*ChunkSize,k.Y*ChunkSize)-player2).LengthSquared()).First();

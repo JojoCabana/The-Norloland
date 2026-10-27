@@ -5,7 +5,7 @@ using System.Linq;
 
 public partial class Main : Node3D
 {
-    public const string AppVersion = "0.2.0";
+    public const string AppVersion = "0.2.2";
 
     private sealed class ChunkBuildJob
     {
@@ -17,6 +17,7 @@ public partial class Main : Node3D
 
     private ChunkBuildJob _chunkBuildJob;
 
+    [Export(PropertyHint.Range, "0,5,0.1")] public float EvaporationMillimetresPerHour { get; set; } = 0.5f;
     [Export] public int WorldSeed { get; set; } = 0;
     [Export(PropertyHint.Range, "1,4,1")] public int ViewDistance { get; set; } = 2;
     [Export] public bool AutoScaleViewDistance { get; set; } = true;
@@ -47,6 +48,7 @@ public partial class Main : Node3D
     private Control _menuRoot = null!;
     private PanelContainer _pauseMenu = null!;
     private PanelContainer _settingsMenu = null!;
+    private OptionButton _seasonChoice;
     private Label _viewDistanceLabel = null!;
     private SurvivalGameplay _survival = null!;
     private Vector2I _lastCenter = new(int.MinValue, int.MinValue);
@@ -68,10 +70,7 @@ public partial class Main : Node3D
     private readonly Mesh[] _treeTrunkMeshes = new Mesh[4];
     private Mesh _treeLeafMesh;
     private double _hudRefreshTimer;
-    private readonly Dictionary<Vector2I, float> _waterLabGround = new();
-    private readonly HashSet<Vector2I> _waterLabChunks = new();
-    private WaterSandbox _waterLab;
-    private bool _debugBeforeWaterLab;
+    private WorldWater _worldWater;
     private bool _escapeWasPressed;
     private float _grassRegrowthTimer;
     private double _saveTimer;
@@ -97,6 +96,8 @@ public partial class Main : Node3D
             GD.Print("LANDSCAPE_INITIALIZING");
         }
         WorldSeed = WorldSave.Load(WorldSeed);
+        EvaporationMillimetresPerHour = WorldSave.Current.EvaporationMillimetresPerHour;
+        _climate = new WorldClimate(WorldSave.Current.ClimateDay);
         RestoreTerrainChanges();
 
         _terrainNoise = new FastNoiseLite
@@ -213,13 +214,8 @@ public partial class Main : Node3D
         _survival.Initialize(this, _player);
         CreateMenus();
         UpdateChunkTargets(true);
-        if (OS.GetCmdlineUserArgs().Contains("--water-preview"))
-        {
-            // CI captures a fixed-size window, independent of the desktop mode.
-            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
-            DisplayServer.WindowSetSize(new Vector2I(1280, 720));
-            ToggleWaterLabor();
-        }
+        _worldWater = new WorldWater { Name = "WorldWater", OwnerWorld = this };
+        AddChild(_worldWater);
     }
 
     public override void _Process(double delta)
@@ -243,6 +239,7 @@ public partial class Main : Node3D
                     _adaptiveViewTimer = 0.0f;
                 }
             }
+            TickClimate(delta);
             _saveTimer += delta;
             if (_saveTimer >= 5.0)
             {
@@ -275,7 +272,7 @@ public partial class Main : Node3D
             _hud.Text = "THE NORLOLAND v" + AppVersion + "  |  Seed: " + WorldSeed +
                         "  |  Chunks: " + _chunks.Count +
                         (WorldSave.Failed || WorldSave.WriteFailed ? "  |  SPEICHERFEHLER" : "  |  Autosave") +
-                        "  |  WASD/Space  |  E Sammeln  |  Linksklick Abbau  |  I Inventar  |  1–4 Werkzeuge  |  F3 Debug  |  F7 Wasserlabor  |  Esc Menü";
+                        "  |  WASD/Space  |  E Sammeln  |  Linksklick Abbau  |  I Inventar  |  1–4 Werkzeuge  |  F3 Debug  |  R Regen im Zielchunk  |  V Gefäß · B füllen · P ausgießen  |  Esc Menü";
         }
 
         if (_debugHud != null && _debugHud.Visible)
@@ -316,16 +313,6 @@ public partial class Main : Node3D
             return;
         }
 
-        if (key.Keycode == Key.F7)
-        {
-            ToggleWaterLabor();
-            GetViewport().SetInputAsHandled();
-            return;
-        }
-
-        if (_waterLab != null)
-            return;
-
         if (key.Keycode == Key.F3)
         {
             _debugHud.Visible = !_debugHud.Visible;
@@ -350,89 +337,6 @@ public partial class Main : Node3D
         {
             Input.MouseMode = Input.MouseModeEnum.Visible;
             GetViewport().SetInputAsHandled();
-        }
-    }
-
-    public void ToggleWaterLabor()
-    {
-        if (_waterLab != null)
-        {
-            _waterLab.QueueFree();
-            _waterLab = null;
-            _waterLabGround.Clear();
-            RebuildWaterLabChunks();
-            _waterLabChunks.Clear();
-            _player.GetNode<Camera3D>("Camera3D").Current = true;
-            _player.SetPhysicsProcess(true);
-            _player.SetProcessUnhandledInput(true);
-            _survival.SetProcessInput(true);
-            _survival.SetProcess(true);
-            _survival.SetWorldInterfaceVisible(true);
-            _hud.Visible = true;
-            _debugHud.Visible = _debugBeforeWaterLab;
-            Input.MouseMode = Input.MouseModeEnum.Captured;
-            return;
-        }
-        _survival.HideCraftingMenu();
-        _menuRoot.Visible = false;
-        GetTree().Paused = false;
-        _player.SetPhysicsProcess(false);
-        _player.SetProcessUnhandledInput(false);
-        _survival.SetProcessInput(false);
-        _survival.SetProcess(false);
-        _survival.SetWorldInterfaceVisible(false);
-        _debugBeforeWaterLab = _debugHud.Visible;
-        _hud.Visible = false;
-        _debugHud.Visible = false;
-        int centerX = Mathf.RoundToInt(_player.Position.X) + 12;
-        int centerZ = Mathf.RoundToInt(_player.Position.Z);
-        float baseHeight = GetHeight(centerX, centerZ);
-        // Modify the existing terrain height samples, fading to the original rim.
-        for (int z = -10; z <= 10; z++)
-        for (int x = -10; x <= 10; x++)
-        {
-            int wx = centerX + x, wz = centerZ + z;
-            float original = GetHeight(wx, wz);
-            float edge = Mathf.Max(Mathf.Abs(x), Mathf.Abs(z));
-            float blend = 1.0f - Mathf.SmoothStep(7.0f, 10.0f, edge);
-            // A bowl rises in both axes: the source first fills the center, then the shores.
-            float valley = baseHeight - 2.5f + x * x * 0.035f + z * z * 0.045f;
-            _waterLabGround[new Vector2I(wx, wz)] = Mathf.Lerp(original, valley, blend);
-            // Include both chunks touching a vertex, including negative coordinates.
-            for (int dz = -1; dz <= 0; dz++)
-            for (int dx = -1; dx <= 0; dx++)
-                _waterLabChunks.Add(new Vector2I(Mathf.FloorToInt((float)(wx + dx) / ChunkSize), Mathf.FloorToInt((float)(wz + dz) / ChunkSize)));
-        }
-        RebuildWaterLabChunks();
-        _waterLab = new WaterSandbox { Name = "WaterLabor", OwnerWorld = this,
-            Position = new Vector3(centerX, baseHeight, centerZ) };
-        AddChild(_waterLab);
-    }
-
-    private void RebuildWaterLabChunks()
-    {
-        // Keep original terrain/vegetation outside the affected chunks. Rebuilding
-        // removes floating plants from the modified valley, then restores them on exit.
-        if (_chunkBuildJob != null && _waterLabChunks.Contains(_chunkBuildJob.Coordinate))
-            _chunkBuildJob = null;
-        foreach (Vector2I coordinate in _waterLabChunks)
-        {
-            if (_chunks.TryGetValue(coordinate, out Node3D old))
-            {
-                old.QueueFree();
-                _chunks.Remove(coordinate);
-                _terrainMeshes.Remove(coordinate);
-                _terrainColliders.Remove(coordinate);
-            }
-        }
-        UpdateChunkTargets(true);
-        if (_waterLabGround.Count == 0) return;
-        foreach (Vector2I coordinate in _waterLabChunks)
-        {
-            if (!_wantedChunks.Contains(coordinate)) continue;
-            Node3D chunk = BuildChunk(coordinate);
-            AddChild(chunk);
-            _chunks[coordinate] = chunk;
         }
     }
 
@@ -529,6 +433,7 @@ public partial class Main : Node3D
         worldEnvironment.Environment = environment;
         AddChild(worldEnvironment);
 
+        _climateEnvironment = environment;
         var sun = new DirectionalLight3D
         {
             Name = "Sun",
@@ -538,6 +443,8 @@ public partial class Main : Node3D
             ShadowEnabled = true
         };
         AddChild(sun);
+        _climateSun = sun;
+        ApplyClimateLighting();
     }
 
     private void CreatePlayer()
@@ -634,6 +541,24 @@ public partial class Main : Node3D
         settingsContent.AddThemeConstantOverride("separation", 14);
         _settingsMenu.AddChild(settingsContent);
         settingsContent.AddChild(CreateMenuTitle("EINSTELLUNGEN"));
+        var evaporationLabel = new Label { Text = $"Basisverdunstung: {EvaporationMillimetresPerHour:F1} mm/Spielstunde", HorizontalAlignment = HorizontalAlignment.Center };
+        settingsContent.AddChild(evaporationLabel);
+        var evaporationSlider = new HSlider { MinValue = 0, MaxValue = 5, Step = .1, Value = EvaporationMillimetresPerHour, CustomMinimumSize = new Vector2(360, 32) };
+        evaporationSlider.ValueChanged += value => {
+            EvaporationMillimetresPerHour = (float)value;
+            evaporationLabel.Text = $"Basisverdunstung: {value:F1} mm/Spielstunde (0 = aus)";
+            SaveWorldChanges();
+        };
+        settingsContent.AddChild(evaporationSlider);
+        settingsContent.AddChild(new Label { Text = "Jahreszeit (28 Spieltage · Spieltag = 20 Minuten)", HorizontalAlignment = HorizontalAlignment.Center });
+        var seasonChoice = new OptionButton();
+        _seasonChoice = seasonChoice;
+        foreach (string season in new[] { "Frühling", "Sommer", "Herbst", "Winter" }) seasonChoice.AddItem(season);
+        seasonChoice.Selected = (int)_climate.CurrentSeason;
+        seasonChoice.ItemSelected += index => { _climate.SelectSeason((WorldClimate.Season)index); ApplyClimateLighting(); SaveWorldChanges(); };
+        settingsContent.AddChild(seasonChoice);
+
+
 
         var distanceTitle = new Label
         {
@@ -721,6 +646,7 @@ public partial class Main : Node3D
 
     private void ShowSettingsMenu()
     {
+        _seasonChoice.Selected = (int)_climate.CurrentSeason;
         _pauseMenu.Visible = false;
         _settingsMenu.Visible = true;
     }
@@ -812,8 +738,6 @@ public partial class Main : Node3D
             }
         }
 
-        if (_waterLabGround.Count > 0)
-            foreach (Vector2I coordinate in _waterLabChunks) _wantedChunks.Add(coordinate);
 
         foreach (Vector2I key in _chunks.Keys.ToArray())
         {
@@ -910,10 +834,7 @@ public partial class Main : Node3D
         chunk.AddChild(collision);
         _terrainColliders[coordinate] = terrainCollisionShape;
         _volumeReady.Remove(coordinate);
-        if(!OS.GetCmdlineUserArgs().Contains("--water-preview"))_volumeDirty.Add(coordinate);
-
-        if (OS.GetCmdlineUserArgs().Contains("--water-preview") || (_waterLabGround.Count > 0 && _waterLabChunks.Contains(coordinate)))
-            return chunk;
+        _volumeDirty.Add(coordinate);
 
         // Terrain and collision become available first. Decoration follows over
         // five frames, preserving each generator's seed and random-call order.
@@ -999,6 +920,9 @@ public partial class Main : Node3D
 
     public void SaveWorldChanges()
     {
+        WorldSave.Current.ClimateDay = _climate.Day;
+        WorldSave.Current.EvaporationMillimetresPerHour = EvaporationMillimetresPerHour;
+        _worldWater?.SaveTo(WorldSave.Current);
         WorldSave.Current.Depth.Clear();
         WorldSave.Current.Cover.Clear();
         foreach (var entry in _excavationDepth)
@@ -1055,17 +979,8 @@ public partial class Main : Node3D
 
     private void RefreshTerrainChunk(Vector2I coordinate, bool refreshCollision = true)
     {
-        if (!_terrainMeshes.TryGetValue(coordinate, out var terrain)) return;
-        if (!_waterLabChunks.Contains(coordinate)) { _volumeDirty.Add(coordinate); return; }
-        var heights=CreateTerrainHeightGrid(coordinate);
-        terrain.Position=Vector3.Zero;
-        terrain.MaterialOverride=_terrainMaterial;
-        terrain.Mesh=CreateTerrainMesh(coordinate,heights);
-        if (_terrainColliders.TryGetValue(coordinate,out var collider))
-        {
-            collider.Position=new Vector3(ChunkSize*.5f,0,ChunkSize*.5f);
-            collider.Shape=new HeightMapShape3D {MapWidth=ChunkSize+1,MapDepth=ChunkSize+1,MapData=CreateHeightMapData(heights)};
-        }
+        if (_terrainMeshes.ContainsKey(coordinate)) _volumeDirty.Add(coordinate);
+        _worldWater?.TerrainChanged();
     }
 
     private float[] CreateHeightMapData(float[,] heights)
@@ -1237,8 +1152,6 @@ public partial class Main : Node3D
 
     private float GetHeight(int worldX, int worldZ)
     {
-        if (_waterLabGround.TryGetValue(new Vector2I(worldX, worldZ), out float laboratoryHeight))
-            return laboratoryHeight;
         float noise = _terrainNoise.GetNoise2D(worldX, worldZ);
         float detail = _detailNoise.GetNoise2D(worldX, worldZ);
         float ridgeField = _mountainNoise.GetNoise2D(worldX, worldZ);
