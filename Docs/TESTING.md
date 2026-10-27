@@ -20,3 +20,14 @@ After a successful workflow:
 4. Download the **TheNorloland-Windows** artifact.
 
 The artifact is temporary and retained for 14 days. A successful export has not been verified until the workflow completes successfully.
+
+## Version 0.1.1: staged chunk construction
+
+- Verify `v0.1.1` in the HUD and construction stages in F3.
+- With the same nonzero seed, fixed view distance, and adaptive distance disabled, compare the same route on main and the performance branch. Record frame-time spikes while loading, not only average FPS.
+- Wait for the queue and build stage to become idle; compare terrain, tree placement, and resource interactions. Decoration now arrives after the terrain.
+- Cross chunk boundaries repeatedly, reduce view distance during loading, and fell a tree while a chunk is building. No job should continue decorating an unloaded or replaced chunk.
+- Pause during loading and resume; construction should pause too.
+- Dig during construction; remaining decoration should sample the updated height grid.
+
+Validation in the editing environment: diff whitespace checks and code review only. Godot/.NET build and runtime profiling have not been executed.

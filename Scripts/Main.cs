@@ -5,6 +5,18 @@ using System.Linq;
 
 public partial class Main : Node3D
 {
+    public const string AppVersion = "0.1.1";
+
+    private sealed class ChunkBuildJob
+    {
+        public Vector2I Coordinate;
+        public Node3D Chunk;
+        public float[,] Heights;
+        public int Stage;
+    }
+
+    private ChunkBuildJob _chunkBuildJob;
+
     [Export] public int WorldSeed { get; set; } = 0;
     [Export(PropertyHint.Range, "1,4,1")] public int ViewDistance { get; set; } = 2;
     [Export] public bool AutoScaleViewDistance { get; set; } = true;
@@ -219,18 +231,7 @@ public partial class Main : Node3D
             if (center != _lastCenter)
                 UpdateChunkTargets(false);
 
-            // Build no more than one chunk per frame to keep generation manageable.
-            while (_pendingChunks.Count > 0)
-            {
-                Vector2I next = _pendingChunks.Dequeue();
-                if (!_wantedChunks.Contains(next) || _chunks.ContainsKey(next))
-                    continue;
-
-                Node3D chunk = BuildChunk(next);
-                AddChild(chunk);
-                _chunks[next] = chunk;
-                break;
-            }
+            AdvanceChunkBuild();
         }
 
         // Text layout and terrain diagnostics need not run at render frequency.
@@ -241,7 +242,7 @@ public partial class Main : Node3D
 
         if (_hud != null)
         {
-            _hud.Text = "THE NORLOLAND  |  Seed: " + WorldSeed +
+            _hud.Text = "THE NORLOLAND v" + AppVersion + "  |  Seed: " + WorldSeed +
                         "  |  Chunks: " + _chunks.Count +
                         "  |  WASD/Space  |  E Sammeln  |  Linksklick Abbau  |  I Inventar  |  1–4 Werkzeuge  |  F3 Debug  |  Esc Menü";
         }
@@ -257,6 +258,7 @@ public partial class Main : Node3D
                 "\nChunk: " + center.X + ", " + center.Y +
                 "\nChunks loaded: " + _chunks.Count + " / " + _wantedChunks.Count +
                 "  |  Queued: " + _pendingChunks.Count +
+                "  |  Build stage: " + (_chunkBuildJob == null ? "idle" : (_chunkBuildJob.Stage + 1).ToString() + "/5") +
                 "\nView radius: " + ViewDistance + " chunks";
         }
     }
@@ -690,6 +692,47 @@ public partial class Main : Node3D
                 .OrderBy(key => key.DistanceSquaredTo(center)));
     }
 
+    private void AdvanceChunkBuild()
+    {
+        // Scene-tree and rendering operations stay on the main thread. Only one
+        // construction stage runs per frame; no partially built detached nodes linger.
+        if (_chunkBuildJob != null)
+        {
+            ChunkBuildJob job = _chunkBuildJob;
+            if (!_wantedChunks.Contains(job.Coordinate) ||
+                !_chunks.TryGetValue(job.Coordinate, out Node3D current) ||
+                current != job.Chunk || current.IsQueuedForDeletion())
+            {
+                _chunkBuildJob = null;
+            }
+            else
+            {
+                switch (job.Stage)
+                {
+                    case 0: AddTrees(job.Chunk, job.Coordinate, job.Heights); break;
+                    case 1: AddGrass(job.Chunk, job.Coordinate, job.Heights); break;
+                    case 2: AddFlowers(job.Chunk, job.Coordinate, job.Heights); break;
+                    case 3: AddShrubs(job.Chunk, job.Coordinate, job.Heights); break;
+                    case 4: AddLooseStones(job.Chunk, job.Coordinate, job.Heights); break;
+                }
+                if (++job.Stage >= 5)
+                    _chunkBuildJob = null;
+                return;
+            }
+        }
+
+        while (_pendingChunks.Count > 0)
+        {
+            Vector2I next = _pendingChunks.Dequeue();
+            if (!_wantedChunks.Contains(next) || _chunks.ContainsKey(next))
+                continue;
+            Node3D chunk = BuildChunk(next);
+            AddChild(chunk);
+            _chunks[next] = chunk;
+            return;
+        }
+    }
+
     private Node3D BuildChunk(Vector2I coordinate)
     {
         var chunk = new Node3D
@@ -727,11 +770,14 @@ public partial class Main : Node3D
         chunk.AddChild(collision);
         _terrainColliders[coordinate] = terrainCollisionShape;
 
-        AddTrees(chunk, coordinate, heights);
-        AddGrass(chunk, coordinate, heights);
-        AddFlowers(chunk, coordinate, heights);
-        AddShrubs(chunk, coordinate, heights);
-        AddLooseStones(chunk, coordinate, heights);
+        // Terrain and collision become available first. Decoration follows over
+        // five frames, preserving each generator's seed and random-call order.
+        _chunkBuildJob = new ChunkBuildJob
+        {
+            Coordinate = coordinate,
+            Chunk = chunk,
+            Heights = heights
+        };
         return chunk;
     }
 
@@ -858,6 +904,8 @@ public partial class Main : Node3D
             return;
 
         float[,] heights = CreateTerrainHeightGrid(coordinate);
+        if (_chunkBuildJob != null && _chunkBuildJob.Coordinate == coordinate)
+            _chunkBuildJob.Heights = heights;
         terrain.Mesh = CreateTerrainMesh(coordinate, heights);
         if (refreshCollision && _terrainColliders.TryGetValue(coordinate, out CollisionShape3D collider))
         {

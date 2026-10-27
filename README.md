@@ -53,4 +53,4 @@ The HUD displays the active seed.
 
 ## Notes
 
-Chunks are generated on the main thread, one per frame. This keeps the prototype simple, but larger view distances can still cause frame drops. Generation jobs, greedy meshing, and more advanced LOD should be added after the core behavior is verified.
+Version 0.1.1 builds terrain and collision first, then trees, grass, flowers, shrubs, and stones in separate frames. Construction remains on the main thread; each stage can still cause a frame spike, and completing the full view takes more frames. Background terrain computation and finer time budgets remain follow-up work. The HUD displays the version; increment Main.AppVersion with subsequent updates.
