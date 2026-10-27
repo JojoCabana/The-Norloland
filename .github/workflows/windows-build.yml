@@ -3,7 +3,7 @@ name: Build Windows prototype
 on:
   workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "perf/shared-meshes-hud" ]
     paths:
       - "**.cs"
       - "**.tscn"
@@ -23,10 +23,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
       - name: Install Godot .NET and export templates
         uses: chickensoft-games/setup-godot@v2
         with:
-          version: 4.4.1
+          version: 4.7.2
           use-dotnet: true
           include-templates: true
 

@@ -1,6 +1,6 @@
 # The Norloland
 
-A single-player-first, procedurally generated voxel-world prototype built with **Godot 4.4 .NET / C#**.
+A single-player-first, procedurally generated voxel-world prototype built with **Godot 4.7.2 .NET / C#**.
 
 ## Current prototype
 
@@ -14,13 +14,13 @@ This is an early technical prototype, not a finished game. Buildings, water, cav
 
 ## Requirements
 
-- Godot **4.4.1 .NET** (the .NET/C# edition, not the standard edition)
+- Godot **4.7.2 .NET** (the .NET/C# edition, not the standard edition)
 - .NET 8 SDK
 - Windows, Linux, or macOS
 
 ## Run it
 
-1. Install Godot 4.4.1 .NET and the .NET 8 SDK.
+1. Install Godot 4.7.2 .NET and the .NET 8 SDK.
 2. Clone or download this repository.
 3. Open \`project.godot\` in Godot.
 4. Let Godot import the project and build the C# solution.

@@ -6,6 +6,7 @@ config_version=5
 [application]
 
 config/name="The Norloland"
+config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
 run/main_scene="res://Scenes/Main.tscn"
 config/description="A procedural, single-player-first voxel open-world prototype."
 

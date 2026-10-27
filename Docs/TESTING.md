@@ -2,7 +2,7 @@
 
 ## Local testing (Windows)
 
-1. Install **Godot 4.4.1 .NET** and the **.NET 8 SDK**.
+1. Install **Godot 4.7.2 .NET** and the **.NET 8 SDK**.
 2. Clone this repository.
 3. Open \`project.godot\` in Godot and allow the C# solution to build.
 4. Run the project with F6/F5.
@@ -42,3 +42,7 @@ Validation in the editing environment: diff whitespace checks and code review on
 - Compare rendering and interaction on the laptop. Build/runtime validation is still required; no successful build is claimed by this change.
 
 Saves are local to this machine under Godot `user://worlds`, not committed to GitHub. World mutations and inventory actions write snapshots synchronously; very large saves may cause disk-related frame spikes.
+
+## Version 0.1.4: Godot 4.7.2 .NET
+
+The C# SDK and CI editor/export templates target 4.7.2. Desktop target remains net8.0, matching the upstream 4.7.2 project generator. Use the .NET edition of the editor. Restart the editor after pulling and rebuild the solution. CI now also builds pushes to the performance branch. A successful build/export and runtime test must be confirmed separately.
