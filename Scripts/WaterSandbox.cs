@@ -192,18 +192,48 @@ public partial class WaterSandbox : Node3D
         var surface = new SurfaceTool();
         surface.Begin(Mesh.PrimitiveType.Triangles);
         bool any = false;
+        // Clip each surface triangle against the actual terrain, rather than
+        // exposing whole square cells at the shoreline. Vertex red stores depth.
+        void Triangle(Vector3 a, Vector3 b, Vector3 c)
+        {
+            float Depth(Vector3 v) => v.Y - (OwnerWorld.GetGroundHeight(
+                GlobalPosition.X + v.X, GlobalPosition.Z + v.Z) - GlobalPosition.Y);
+            var input = new System.Collections.Generic.List<(Vector3 p, float depth)> {
+                (a, Depth(a)), (b, Depth(b)), (c, Depth(c)) };
+            var clipped = new System.Collections.Generic.List<(Vector3 p, float depth)>();
+            for (int i = 0; i < input.Count; i++)
+            {
+                var start = input[i]; var end = input[(i + 1) % input.Count];
+                bool inside = start.depth > 0, nextInside = end.depth > 0;
+                if (inside) clipped.Add(start);
+                if (inside != nextInside)
+                {
+                    float t = start.depth / (start.depth - end.depth);
+                    clipped.Add((start.p.Lerp(end.p, t), 0));
+                }
+            }
+            if (clipped.Count < 3) return;
+            any = true;
+            void Vertex((Vector3 p, float depth) v)
+            {
+                surface.SetNormal(Vector3.Up);
+                surface.SetColor(new Color(Mathf.Clamp(v.depth, 0, 1), 0, 0, 1));
+                surface.AddVertex(v.p);
+            }
+            for (int i = 1; i + 1 < clipped.Count; i++)
+            {
+                Vertex(clipped[0]); Vertex(clipped[i]); Vertex(clipped[i + 1]);
+            }
+        }
         for (int z = 0; z < Size; z++)
         for (int x = 0; x < Size; x++)
         {
             if (_grid.Water[z * Size + x] <= 0.008) continue;
-            any = true;
             Vector3 a = new(x - 10, heights[x,z], z - 10);
             Vector3 b = new(x - 10, heights[x,z+1], z - 9);
             Vector3 c = new(x - 9, heights[x+1,z+1], z - 9);
             Vector3 d = new(x - 9, heights[x+1,z], z - 10);
-            surface.SetNormal(Vector3.Up);
-            surface.AddVertex(a); surface.AddVertex(b); surface.AddVertex(c);
-            surface.AddVertex(a); surface.AddVertex(c); surface.AddVertex(d);
+            Triangle(a, b, c); Triangle(a, c, d);
         }
         _waterSurface.Mesh = any ? surface.Commit() : null;
     }
