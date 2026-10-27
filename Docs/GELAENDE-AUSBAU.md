@@ -28,8 +28,9 @@ Modelle, Texturen und Wind-/Bodenshader aus 3dspiel, Credits in Assets/Nature.
 MultiMesh-Batches, nahe/ferne Laubbäume und begrenzte Grassichtweite. Kein
 Performanceversprechen für die RX 5600 XT ohne Messung am Zielrechner.
 
-Das F7-Wasserlabor behält seine gesonderte Höhenfeld-Testfläche; unterirdischer
-Wasserfluss ist nicht Teil dieses Ausbaus. Die Kopplung des Oberflächenwassers
+Das frühere F7-Wasserlabor wurde ab 0.2.1 entfernt; Oberflächenwasser und lokaler
+Regen laufen in der normalen Welt (siehe WASSER.md). Unterirdischer
+Wasserfluss ist weiterhin nicht enthalten. Die Kopplung des Oberflächenwassers
 an ein dreidimensionales Höhlensystem ist gesondert zu entwickeln.
 
 CI prüft Materialschichten, Höhlen, Erhalt der Decke, Grenzgeometrie,

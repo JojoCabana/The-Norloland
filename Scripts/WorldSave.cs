@@ -23,6 +23,11 @@ public static class WorldSave
             new WaterVessel { Name = "Schüssel", CapacityLitres = 2 },
             new WaterVessel { Name = "Krug", CapacityLitres = 5 }
         };
+        public double ClimateDay { get; set; } = 56.5;
+        public float EvaporationMillimetresPerHour { get; set; } = 0.5f;
+        public Dictionary<string, double> WorldSnow { get; set; } = new();
+        public Dictionary<string, double> WorldWater { get; set; } = new();
+        public HashSet<string> RainChunks { get; set; } = new();
         public List<Drop> Drops { get; set; } = new();
         public Dictionary<string, int> Health { get; set; } = new();
         public List<VolumeTerrain.Cut> Cuts { get; set; } = new();
@@ -66,6 +71,27 @@ public static class WorldSave
                     loaded.Depth == null || loaded.Cover == null || loaded.Consumed == null ||
                     loaded.Growth == null || loaded.Inventory == null)
                     throw new InvalidDataException("Invalid world save.");
+                if (!double.IsFinite(loaded.ClimateDay) || loaded.ClimateDay < 0 || loaded.ClimateDay > 100000000)
+                    throw new InvalidDataException("Invalid climate clock.");
+                if (!float.IsFinite(loaded.EvaporationMillimetresPerHour) || loaded.EvaporationMillimetresPerHour < 0 || loaded.EvaporationMillimetresPerHour > 5)
+                    throw new InvalidDataException("Invalid evaporation rate.");
+                loaded.WorldSnow ??= new();
+                loaded.WorldWater ??= new();
+                loaded.RainChunks ??= new();
+                static bool ValidCell(string key)
+                {
+                    string[] parts = key.Split(',');
+                    return parts.Length == 2 && int.TryParse(parts[0], out int x) && int.TryParse(parts[1], out int z)
+                        && Math.Abs((long)x) < 100000000 && Math.Abs((long)z) < 100000000;
+                }
+                foreach (var cell in loaded.WorldSnow)
+                    if (!ValidCell(cell.Key) || !double.IsFinite(cell.Value) || cell.Value < 0)
+                        throw new InvalidDataException("Invalid world snow.");
+                foreach (var cell in loaded.WorldWater)
+                    if (!ValidCell(cell.Key) || !double.IsFinite(cell.Value) || cell.Value < 0)
+                        throw new InvalidDataException("Invalid world water.");
+                foreach (string chunk in loaded.RainChunks)
+                    if (!ValidCell(chunk)) throw new InvalidDataException("Invalid rain chunk.");
                 loaded.Cuts ??= new();
                 loaded.Parcels ??= new();
                 loaded.MaterialVolumes ??= new();
