@@ -1,5 +1,13 @@
 # The Norloland — Development Roadmap
 
+Current decisions and verified status: [Session handover 2026-10-27](PROJEKTSTAND_2026-10-27.md). This roadmap describes long-term milestones; partial implementations are detailed in that handover.
+
+## Next priorities after 0.1.5
+- [ ] Complete laptop runtime/restart tests for saving, slots, harvesting and chunk transitions.
+- [ ] Separate world state, game commands, persistence and UI before expanding gameplay for eventual authoritative multiplayer. Networking itself is deferred.
+- [ ] Persist player position and review synchronous save costs.
+- [ ] Profile chunk construction stages before adding background computation.
+
 ## Milestone 0: Playable technical prototype
 - [x] Godot 4 .NET project structure
 - [x] First-person controller and mouse look
@@ -37,5 +45,5 @@
 - [ ] Profile on the target PC
 - [ ] Worker-thread generation
 - [ ] Graphics and gameplay settings
-- [ ] Automated Windows export
+- [x] Automated Windows build/export for Godot 4.7.2 .NET (0.1.4 and 0.1.5 CI succeeded)
 - [ ] Verify a downloadable Windows build

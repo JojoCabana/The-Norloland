@@ -1,5 +1,7 @@
 # The Norloland
 
+Current project direction, decisions and handover: [Projektstand 27.10.2026](Docs/PROJEKTSTAND_2026-10-27.md). Current app version: **0.1.5**.
+
 A single-player-first, procedurally generated voxel-world prototype built with **Godot 4.7.2 .NET / C#**.
 
 ## Current prototype
