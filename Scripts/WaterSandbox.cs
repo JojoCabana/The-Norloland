@@ -20,6 +20,7 @@ public partial class WaterSandbox : Node3D
     private CpuParticles3D _rain;
     private ColorRect _flare;
     private ShaderMaterial _flareMaterial;
+    private bool _freeLook;
     private bool _raining = true;
     private bool _paused;
     private bool _flareEnabled = true;
@@ -58,7 +59,7 @@ public partial class WaterSandbox : Node3D
                 Position = new Vector3(0, groundY + height * 0.5f, z - 9.5f),
                 MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.48f, 0.34f, 0.19f), Roughness = 0.9f } });
         }
-        _camera = new Camera3D { Current = true, Far = 100, Fov = 55 }; AddChild(_camera); UpdateCamera();
+        _camera = new Camera3D { Current = true, Far = 1000, Fov = 55 }; AddChild(_camera); UpdateCamera();
         _rain = new CpuParticles3D {
             Amount = 500, Lifetime = 1.5, Emitting = true,
             EmissionShape = CpuParticles3D.EmissionShapeEnum.Box, EmissionBoxExtents = new Vector3(10, 0.2f, 10),
@@ -88,6 +89,22 @@ public partial class WaterSandbox : Node3D
     }
     public override void _UnhandledInput(InputEvent input)
     {
+        if (input is InputEventMouseButton lookButton && lookButton.ButtonIndex == MouseButton.Right)
+        {
+            _freeLook = lookButton.Pressed;
+            Input.MouseMode = _freeLook ? Input.MouseModeEnum.Captured : Input.MouseModeEnum.Visible;
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+        if (input is InputEventMouseMotion motion && _freeLook)
+        {
+            Vector3 rotation = _camera.Rotation;
+            rotation.Y -= motion.Relative.X * 0.003f;
+            rotation.X = Mathf.Clamp(rotation.X - motion.Relative.Y * 0.003f, -1.5f, 1.5f);
+            _camera.Rotation = rotation;
+            GetViewport().SetInputAsHandled();
+            return;
+        }
         if (input is InputEventMouseButton mouse && mouse.Pressed && mouse.ButtonIndex == MouseButton.Left)
         {
             Vector3 origin = _camera.ProjectRayOrigin(mouse.Position);
@@ -111,7 +128,7 @@ public partial class WaterSandbox : Node3D
                 _waterMessage = $"Ausgegossen: {WorldSave.Current.Vessels[_selectedVessel].Pour(_grid, _selectedCell):F3} Liter";
                 WorldSave.Save(); UpdateWater(); break;
             case Key.R: _raining = !_raining; break;
-            case Key.D: _grid.DamClosed = !_grid.DamClosed; _dam.Visible = _grid.DamClosed; break;
+            case Key.G: _grid.DamClosed = !_grid.DamClosed; _dam.Visible = _grid.DamClosed; UpdateWater(); break;
             case Key.Space: _paused = !_paused; break;
             case Key.F: _flareEnabled = !_flareEnabled; break;
             case Key.Left: _angle -= 0.2f; UpdateCamera(); break;
@@ -135,6 +152,16 @@ public partial class WaterSandbox : Node3D
             GD.Print("Water preview: " + path + " (" + error + ")");
             GetTree().Quit(error == Error.Ok ? 0 : 1);
         }
+        // Camera remains usable while the water simulation is paused.
+        Vector3 flight = Vector3.Zero;
+        if (Input.IsPhysicalKeyPressed(Key.W)) flight -= _camera.Basis.Z;
+        if (Input.IsPhysicalKeyPressed(Key.S)) flight += _camera.Basis.Z;
+        if (Input.IsPhysicalKeyPressed(Key.A)) flight -= _camera.Basis.X;
+        if (Input.IsPhysicalKeyPressed(Key.D)) flight += _camera.Basis.X;
+        if (Input.IsPhysicalKeyPressed(Key.E)) flight += Vector3.Up;
+        if (Input.IsPhysicalKeyPressed(Key.Q)) flight -= Vector3.Up;
+        if (flight.LengthSquared() > 0)
+            _camera.Position += flight.Normalized() * (Input.IsPhysicalKeyPressed(Key.Shift) ? 24 : 8) * (float)Math.Min(delta, 0.1);
         _rain.Emitting = _raining && !_paused;
         if (!_paused)
         {
@@ -162,10 +189,11 @@ public partial class WaterSandbox : Node3D
         {
             _hudTimer = 0.2;
             _hud.Text = $"WASSERLABOR v{Main.AppVersion}  ·  Testbereich in der Spielwelt\n" +
-                $"R Regen: {(_raining ? "AN" : "AUS")}   D Damm: {(_grid.DamClosed ? "ZU" : "OFFEN")}   Leertaste: Pause {(_paused ? "AN" : "AUS")}\n" +
-                "← → Kamera   F Lens Flare   Rücktaste: Wasser leeren   F7 / Esc: Spielfigur\n" +
+                $"R Regen: {(_raining ? "AN" : "AUS")}   G Damm: {(_grid.DamClosed ? "ZU" : "OFFEN")}   Leertaste: Pause {(_paused ? "AN" : "AUS")}\n" +
+                "WASD Flug · Q/E runter/hoch · Shift schneller · rechte Maustaste: umsehen\n" +
+                "← → Übersicht   F Lens Flare   Rücktaste: leeren   F7 / Esc: Spielfigur\n" +
                 $"Wasser: {_grid.Volume:F2} m³   Regen gesamt: {_grid.RainAdded:F2} m³\n" +
-                $"Durchfluss am Damm: {_grid.LastDamFlow:F2} m³/s   Bilanzfehler: {_grid.Volume - _grid.RainAdded + _grid.Taken - _grid.Returned:E1}\n" +
+                $"Dammkrone: {_grid.DamCrest:F2} m · {(_grid.DamClosed ? "Überlauf" : "Durchfluss")}: {_grid.LastDamFlow:F2} m³/s   Bilanzfehler: {_grid.Volume - _grid.RainAdded + _grid.Taken - _grid.Returned:E1}\n" +
                 $"V Gefäß: {WorldSave.Current.Vessels[_selectedVessel].Name}  {WorldSave.Current.Vessels[_selectedVessel].Litres:F3}/{WorldSave.Current.Vessels[_selectedVessel].CapacityLitres:F1} L · B füllen · P ausgießen\n" +
                 $"Zelle {sx},{sz}: {_grid.Water[_selectedCell] * 1000:F3} L · {_waterMessage}\n" +
                 "Regenzufluss in der Mitte · Laborwasser temporär · Gefäßfüllung gespeichert";
@@ -173,22 +201,6 @@ public partial class WaterSandbox : Node3D
     }
     private void UpdateWater()
     {
-        var heights = new float[Size + 1, Size + 1];
-        for (int z = 0; z <= Size; z++)
-        for (int x = 0; x <= Size; x++)
-        {
-            double sum = 0; int count = 0;
-            for (int dz = -1; dz <= 0; dz++)
-            for (int dx = -1; dx <= 0; dx++)
-            {
-                int cx = x + dx, cz = z + dz;
-                if (cx < 0 || cx >= Size || cz < 0 || cz >= Size) continue;
-                int i = cz * Size + cx;
-                if (_grid.Water[i] <= 0.008) continue;
-                sum += _grid.Ground[i] + _grid.Water[i]; count++;
-            }
-            heights[x,z] = count > 0 ? (float)(sum / count) : -10;
-        }
         var surface = new SurfaceTool();
         surface.Begin(Mesh.PrimitiveType.Triangles);
         bool any = false;
@@ -229,10 +241,20 @@ public partial class WaterSandbox : Node3D
         for (int x = 0; x < Size; x++)
         {
             if (_grid.Water[z * Size + x] <= 0.008) continue;
-            Vector3 a = new(x - 10, heights[x,z], z - 10);
-            Vector3 b = new(x - 10, heights[x,z+1], z - 9);
-            Vector3 c = new(x - 9, heights[x+1,z+1], z - 9);
-            Vector3 d = new(x - 9, heights[x+1,z], z - 10);
+            Vector3 Corner(int vx, int vz)
+            {
+                float level = (float)_grid.CornerLevel(vx, vz, x);
+                float px = vx - 10;
+                // The simulation barrier has zero width, the visible wall is
+                // 16 cm thick. Stop below-crest surfaces at the wall faces.
+                if (_grid.DamClosed && vx == Size / 2 && level <= _grid.DamCrest + 0.03)
+                    px += x < Size / 2 ? -0.081f : 0.081f;
+                return new Vector3(px, level, vz - 10);
+            }
+            Vector3 a = Corner(x, z);
+            Vector3 b = Corner(x, z + 1);
+            Vector3 c = Corner(x + 1, z + 1);
+            Vector3 d = Corner(x + 1, z);
             Triangle(a, b, c); Triangle(a, c, d);
         }
         _waterSurface.Mesh = any ? surface.Commit() : null;

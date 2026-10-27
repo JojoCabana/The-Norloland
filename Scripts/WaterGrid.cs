@@ -59,6 +59,23 @@ public sealed class WaterGrid
         }
         for (int i = 0; i < Water.Length; i++) Water[i] += _delta[i];
     }
+    // Shared mesh corners must not average upstream and downstream levels
+    // across a closed dam. cellX identifies which bank is being rendered.
+    public double CornerLevel(int vertexX, int vertexZ, int cellX)
+    {
+        double sum = 0; int count = 0;
+        for (int dz = -1; dz <= 0; dz++)
+        for (int dx = -1; dx <= 0; dx++)
+        {
+            int x = vertexX + dx, z = vertexZ + dz;
+            if (x < 0 || x >= Width || z < 0 || z >= Depth) continue;
+            if (DamClosed && (x < Width / 2) != (cellX < Width / 2)) continue;
+            int i = z * Width + x;
+            if (Water[i] <= 0.008) continue;
+            sum += Ground[i] + Water[i]; count++;
+        }
+        return count > 0 ? sum / count : -10;
+    }
     private void Transfer(int source, int x, int z, int nx, int nz, double dt)
     {
         if (nx < 0 || nx >= Width || nz < 0 || nz >= Depth) return; // sealed boundary
@@ -70,6 +87,8 @@ public sealed class WaterGrid
         double head = level - receiver;
         if (head <= 0 || Water[source] <= 0) return;
         double amount = Math.Min(Water[source] * 0.249, head * dt * 1.8);
+        // Only the volume above the crest may cross a closed dam.
+        if (crossesDam && DamClosed) amount = Math.Min(amount, Math.Max(0, level - DamCrest));
         _delta[source] -= amount;
         _delta[target] += amount;
         if (crossesDam) LastDamFlow += (nx > x ? amount : -amount) / dt;

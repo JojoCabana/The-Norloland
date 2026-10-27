@@ -25,6 +25,21 @@ static class Checks
         var overflow = new WaterGrid(2, 1) { DamCrest = 2 };
         overflow.Water[0] = 3; overflow.Step(0.05, 0);
         Check(overflow.Water[1] > 0, "Dam cannot overflow");
+        var banks = new WaterGrid(4, 2) { DamCrest = 3 };
+        banks.Water[1] = 2; banks.Water[2] = 0.2;
+        Check(Math.Abs(banks.CornerLevel(2, 1, 1) - 2) < 1e-12, "Dam lowers upstream render level");
+        Check(Math.Abs(banks.CornerLevel(2, 1, 2) - 0.2) < 1e-12, "Dam raises downstream render level");
+        banks.DamClosed = false;
+        Check(Math.Abs(banks.CornerLevel(2, 1, 1) - 1.1) < 1e-12, "Open dam separates surface");
+        var sealedBank = new WaterGrid(4, 4) { DamCrest = 2.2, RainSourceCell = 5 };
+        for (int t = 0; t < 1000; t++) sealedBank.Step(0.05, 0.01);
+        for (int z = 0; z < 4; z++)
+        for (int x = 2; x < 4; x++) Check(sealedBank.Water[z * 4 + x] == 0, "Closed dam leaks under sustained inflow");
+        sealedBank.RainSourceCell = 6; // Reverse flow must also be blocked below crest.
+        Array.Clear(sealedBank.Water);
+        for (int t = 0; t < 1000; t++) sealedBank.Step(0.05, 0.01);
+        for (int z = 0; z < 4; z++)
+        for (int x = 0; x < 2; x++) Check(sealedBank.Water[z * 4 + x] == 0, "Dam leaks in reverse direction");
         var pool = new WaterGrid(2, 1);
         pool.Put(0, 0.001); // one litre
         var bowl = new WaterVessel { CapacityLitres = 2 };
