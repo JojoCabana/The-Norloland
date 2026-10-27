@@ -5,7 +5,7 @@ using System.Linq;
 
 public partial class Main : Node3D
 {
-    public const string AppVersion = "0.1.2";
+    public const string AppVersion = "0.1.3";
 
     private sealed class ChunkBuildJob
     {

@@ -69,7 +69,7 @@ public static class WorldSave
         try
         {
             // Flush the complete temporary snapshot before replacing the previous one.
-            using (var stream = new FileStream(_path + ".tmp", FileMode.Create, FileAccess.Write))
+            using (var stream = new FileStream(_path + ".tmp", FileMode.Create, System.IO.FileAccess.Write))
             {
                 JsonSerializer.Serialize(stream, Current);
                 stream.Flush(true);
