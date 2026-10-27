@@ -89,7 +89,13 @@ public partial class Main : Node3D
         AddInputAction("jump", Key.Space);
         AddInputAction("pause_menu", Key.Escape);
 
-        if(OS.GetCmdlineUserArgs().Contains("--landscape-demo")) { WorldSeed=741932;AutoScaleViewDistance=false; }
+        if(OS.GetCmdlineUserArgs().Contains("--landscape-demo")) {
+            WorldSeed=741932;AutoScaleViewDistance=false;
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            DisplayServer.WindowSetSize(new Vector2I(640,360));
+            GetViewport().GetWindow().ContentScaleSize=new Vector2I(640,360);
+            GD.Print("LANDSCAPE_INITIALIZING");
+        }
         WorldSeed = WorldSave.Load(WorldSeed);
         RestoreTerrainChanges();
 
@@ -198,6 +204,7 @@ public partial class Main : Node3D
         _flowerPetalMesh = CreateFlowerPetalMesh();
 
         InitializeNature();
+        if(OS.GetCmdlineUserArgs().Contains("--landscape-demo"))GD.Print("LANDSCAPE_MODELS_LOADED");
         CreateLighting();
         CreatePlayer();
         CreateHud();
@@ -540,6 +547,7 @@ public partial class Main : Node3D
             Position = new Vector3(0, 55, 0)
         };
         AddChild(_player);
+        if(OS.GetCmdlineUserArgs().Contains("--landscape-demo"))_player.SetPhysicsProcess(false);
         _player.GetNode<Camera3D>("Camera3D").Far = ChunkSize * (ViewDistance + 1.0f);
     }
 

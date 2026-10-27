@@ -13,6 +13,7 @@ public partial class Main
     {
         if(!OS.GetCmdlineUserArgs().Contains("--landscape-demo")||_demoBusy)return;
         _demoWait+=delta;
+        if((int)(_demoWait*15)%150==0)GD.Print($"LANDSCAPE_LOADING pending={_pendingChunks.Count} dirty={_volumeDirty.Count} task={_volumeTask?.Status} player={_player.Position}");
         if(_demoWait>3600){GD.PushError("Landscape generation timed out");GetTree().Quit(2);return;}
         if(_volumeTask!=null||_volumeDirty.Count>0||_pendingChunks.Count>0||_chunkBuildJob!=null)return;
         if(_demoCamera==null)
