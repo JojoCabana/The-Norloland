@@ -1337,6 +1337,7 @@ public partial class Main : Node3D
         }
 
         AddNatureTrees(chunk,natureTransforms);
+        CullUnsupportedPlants(chunk,MakeField());
 
     }
 

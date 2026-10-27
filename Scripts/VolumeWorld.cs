@@ -43,6 +43,13 @@ public partial class Main
         var coordinate=new Vector2I(Mathf.FloorToInt(position.X/ChunkSize),Mathf.FloorToInt(position.Z/ChunkSize));
         return _chunks.ContainsKey(coordinate) && (_waterLabChunks.Contains(coordinate)||_volumeReady.Contains(coordinate));
     }
+    public float GroundBelow(Vector3 origin)
+    {
+        var field=MakeField();
+        for(float y=origin.Y+.25f;y>_volumeBottom;y-=.125f)
+            if(field.Density(new NVector(origin.X,y,origin.Z))>=0)return y+.125f;
+        return origin.Y;
+    }
     public string GroundMaterialAt(Vector3 position)=>MakeField().Material(new NVector(position.X,position.Y-.05f,position.Z));
     public bool IsRockLayerAt(Vector3 position)=>GroundMaterialAt(position) is "stone" or "iron_ore";
     public double ExcavateVolume(Vector3 position,float radius)

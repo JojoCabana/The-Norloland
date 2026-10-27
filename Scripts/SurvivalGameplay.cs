@@ -735,7 +735,7 @@ public partial class SurvivalGameplay : Node
         {
             float angle = i * Mathf.Tau / kinds.Length;
             Vector3 end = origin + new Vector3(Mathf.Cos(angle) * 0.65f, 0, Mathf.Sin(angle) * 0.65f);
-            end.Y = _main.GetGroundHeight(end.X, end.Z) + 0.14f;
+            end.Y = _main.GroundBelow(new Vector3(end.X,origin.Y,end.Z)) + 0.14f;
             var drop = new WorldSave.Drop { Id = Guid.NewGuid().ToString("N"), Kind = kinds[i], X = end.X, Y = end.Y, Z = end.Z };
             WorldSave.Current.Drops.Add(drop);
             ResourceNode node = CreateDropVisual(drop);
