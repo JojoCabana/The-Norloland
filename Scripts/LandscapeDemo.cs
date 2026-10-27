@@ -18,21 +18,23 @@ public partial class Main
         if(_demoCamera==null)
         {
             DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
-            DisplayServer.WindowSetSize(new Vector2I(960,540));
-            GetViewport().GetWindow().ContentScaleSize=new Vector2I(960,540);
+            DisplayServer.WindowSetSize(new Vector2I(640,360));
+            GetViewport().GetWindow().ContentScaleSize=new Vector2I(640,360);
             _player.SetPhysicsProcess(false);
             _demoCamera=new Camera3D{Current=true,Fov=72,Far=160};AddChild(_demoCamera);
-            foreach(Node child in GetChildren())if(child is CanvasLayer layer)layer.Visible=false;_survival.SetProcess(false);_hud.Visible=false;_debugHud.Visible=false;
+            foreach(Node child in GetChildren())if(child is CanvasLayer layer)layer.Visible=false;_survival.SetWorldInterfaceVisible(false);_survival.SetProcess(false);_hud.Visible=false;_debugHud.Visible=false;
             Directory.CreateDirectory("build/landscape-frames");
+            GD.Print("LANDSCAPE_DEMO_READY");
         }
         _demoBusy=true;
-        float angle=-.9f+_demoFrame/299f*1.35f;
+        float angle=-.9f+_demoFrame/149f*1.35f;
         var center=new Vector3(0,SampleOriginalSurface(0,0)+2,0);
-        _demoCamera.GlobalPosition=center+new Vector3(Mathf.Sin(angle)*19,5+Mathf.Sin(_demoFrame/299f*Mathf.Pi)*1.5f,Mathf.Cos(angle)*19);
+        _demoCamera.GlobalPosition=center+new Vector3(Mathf.Sin(angle)*19,5+Mathf.Sin(_demoFrame/149f*Mathf.Pi)*1.5f,Mathf.Cos(angle)*19);
         _demoCamera.LookAt(center,Vector3.Up);
         await ToSignal(RenderingServer.Singleton,RenderingServer.SignalName.FramePostDraw);
         GetViewport().GetTexture().GetImage().SavePng($"build/landscape-frames/{_demoFrame:D4}.png");
         _demoFrame++;_demoBusy=false;
-        if(_demoFrame==300){GD.Print("LANDSCAPE_DEMO_COMPLETE 300 frames / 30 fps / 10 seconds");GetTree().Quit();}
+        if(_demoFrame%15==0)GD.Print($"LANDSCAPE_DEMO_FRAME {_demoFrame}/150");
+        if(_demoFrame==150){GD.Print("LANDSCAPE_DEMO_COMPLETE 150 frames / 15 fps / 10 seconds");GetTree().Quit();}
     }
 }

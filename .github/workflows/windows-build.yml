@@ -63,20 +63,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Render ten-second landscape demo
-        run: |
-          timeout 600s xvfb-run -a godot --path . --rendering-method gl_compatibility --fixed-fps 30 -- --landscape-demo
-          ffmpeg -y -framerate 30 -i build/landscape-frames/%04d.png -t 10 -c:v libx264 -crf 22 -pix_fmt yuv420p -movflags +faststart build/norloland-landscape-10s.mp4
-          ffprobe -v error -show_entries format=duration -of csv=p=0 build/norloland-landscape-10s.mp4
-
-      - name: Upload landscape demo
-        uses: actions/upload-artifact@v4
-        with:
-          name: Landscape-Demo-10s
-          path: build/norloland-landscape-10s.mp4
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Export Windows build
         run: |
           mkdir -p build
@@ -91,3 +77,27 @@ jobs:
             build/TheNorloland.pck
           if-no-files-found: error
           retention-days: 14
+
+      - name: Render ten-second landscape demo
+        run: |
+          timeout 600s xvfb-run -a godot --path . --rendering-method gl_compatibility --fixed-fps 15 -- --landscape-demo
+          ffmpeg -y -framerate 15 -i build/landscape-frames/%04d.png -t 10 -c:v libx264 -crf 22 -pix_fmt yuv420p -movflags +faststart build/norloland-landscape-10s.mp4
+          ffprobe -v error -show_entries format=duration -of csv=p=0 build/norloland-landscape-10s.mp4
+
+      - name: Upload landscape demo
+        uses: actions/upload-artifact@v4
+        with:
+          name: Landscape-Demo-10s
+          path: build/norloland-landscape-10s.mp4
+          if-no-files-found: error
+          retention-days: 14
+
+
+      - name: Preserve capture diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Landscape-Capture-Diagnostics
+          path: build/landscape-frames/
+          if-no-files-found: warn
+          retention-days: 3

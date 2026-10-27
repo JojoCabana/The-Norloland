@@ -34,5 +34,5 @@ an ein dreidimensionales Höhlensystem ist gesondert zu entwickeln.
 
 CI prüft Materialschichten, Höhlen, Erhalt der Decke, Grenzgeometrie,
 Speicher-Rundlauf und überlappenden Abbau ohne Materialduplikation. Dazu Godot-
-Build, Wasserprüfungen und Windows-Export. --landscape-demo erzeugt 300 echte
-Spielbilder für ein zehnsekündiges 30-fps-MP4; keine KI-generierte Vorschau.
+Build, Wasserprüfungen und Windows-Export. --landscape-demo erzeugt 150 echte
+Spielbilder für ein zehnsekündiges 15-fps-MP4 (640 × 360 auf dem Software-Renderer); keine KI-generierte Vorschau.
