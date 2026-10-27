@@ -6,7 +6,7 @@ public partial class GrowingBush : Node3D
 {
     private const float MatureHeight = 1.6f;
     private const float GrowthSeconds = 1800.0f;
-    private static readonly Dictionary<string, float> SavedGrowth = new();
+    private static Dictionary<string, float> SavedGrowth => WorldSave.Current.Growth;
     // Shared geometry is never mutated after construction.
     private static Mesh _branchMesh;
     private static Mesh _leafMesh;
@@ -66,6 +66,7 @@ public partial class GrowingBush : Node3D
         _growth = 0.0f;
         SetProcess(true);
         SavedGrowth[_persistentId] = _growth;
+        WorldSave.Save();
         UpdateGrowthScale();
         return sticks;
     }

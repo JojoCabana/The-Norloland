@@ -5,7 +5,7 @@ using System.Linq;
 
 public partial class Main : Node3D
 {
-    public const string AppVersion = "0.1.1";
+    public const string AppVersion = "0.1.2";
 
     private sealed class ChunkBuildJob
     {
@@ -70,6 +70,7 @@ public partial class Main : Node3D
     private double _hudRefreshTimer;
     private bool _escapeWasPressed;
     private float _grassRegrowthTimer;
+    private double _saveTimer;
     private float _adaptiveViewTimer;
     private int _adaptiveGoodFrames;
     private int _adaptiveBadFrames;
@@ -84,8 +85,8 @@ public partial class Main : Node3D
         AddInputAction("jump", Key.Space);
         AddInputAction("pause_menu", Key.Escape);
 
-        if (WorldSeed == 0)
-            WorldSeed = unchecked((int)GD.Randi());
+        WorldSeed = WorldSave.Load(WorldSeed);
+        RestoreTerrainChanges();
 
         _terrainNoise = new FastNoiseLite
         {
@@ -222,6 +223,12 @@ public partial class Main : Node3D
                     _adaptiveViewTimer = 0.0f;
                 }
             }
+            _saveTimer += delta;
+            if (_saveTimer >= 5.0)
+            {
+                SaveWorldChanges();
+                _saveTimer = 0.0;
+            }
             _grassRegrowthTimer += (float)delta;
             if (_grassRegrowthTimer >= 5.0f)
             {
@@ -244,6 +251,7 @@ public partial class Main : Node3D
         {
             _hud.Text = "THE NORLOLAND v" + AppVersion + "  |  Seed: " + WorldSeed +
                         "  |  Chunks: " + _chunks.Count +
+                        (WorldSave.Failed || WorldSave.WriteFailed ? "  |  SPEICHERFEHLER" : "  |  Autosave") +
                         "  |  WASD/Space  |  E Sammeln  |  Linksklick Abbau  |  I Inventar  |  1–4 Werkzeuge  |  F3 Debug  |  Esc Menü";
         }
 
@@ -847,6 +855,7 @@ public partial class Main : Node3D
             _grassCover[key] = 0.0f;
         }
 
+        SaveWorldChanges();
         foreach (Vector2I coordinate in _chunks.Keys.ToArray())
         {
             float minX = coordinate.X * ChunkSize - radius - 1.0f;
@@ -858,6 +867,37 @@ public partial class Main : Node3D
             RefreshTerrainChunk(coordinate);
         }
     }
+
+    private void RestoreTerrainChanges()
+    {
+        _excavationDepth.Clear();
+        _grassCover.Clear();
+        foreach (var entry in WorldSave.Current.Depth)
+        {
+            string[] parts = entry.Key.Split(',');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int x) && int.TryParse(parts[1], out int z))
+                _excavationDepth[new Vector2I(x, z)] = entry.Value;
+        }
+        foreach (var entry in WorldSave.Current.Cover)
+        {
+            string[] parts = entry.Key.Split(',');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int x) && int.TryParse(parts[1], out int z))
+                _grassCover[new Vector2I(x, z)] = entry.Value;
+        }
+    }
+
+    public void SaveWorldChanges()
+    {
+        WorldSave.Current.Depth.Clear();
+        WorldSave.Current.Cover.Clear();
+        foreach (var entry in _excavationDepth)
+            WorldSave.Current.Depth[$"{entry.Key.X},{entry.Key.Y}"] = entry.Value;
+        foreach (var entry in _grassCover)
+            WorldSave.Current.Cover[$"{entry.Key.X},{entry.Key.Y}"] = entry.Value;
+        WorldSave.Save();
+    }
+
+    public override void _ExitTree() => SaveWorldChanges();
 
     public void RemoveTreeAt(Vector3 worldPosition, string persistentId)
     {

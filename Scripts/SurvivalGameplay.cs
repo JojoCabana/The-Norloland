@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 public partial class SurvivalGameplay : Node
 {
-    private static readonly HashSet<string> ConsumedResources = new();
+    private static HashSet<string> ConsumedResources => WorldSave.Current.Consumed;
     private Main _main = null!;
     private PlayerController _player = null!;
     private Camera3D _camera = null!;
@@ -17,6 +17,10 @@ public partial class SurvivalGameplay : Node
     private PanelContainer _craftPanel = null!;
     private PanelContainer _buildBookPanel = null!;
     private GridContainer _itemGrid = null!;
+    private readonly System.Collections.Generic.List<(string Kind, int Count)> _slots = new();
+    private const int StackLimit = 99;
+    private static readonly string[] ItemKinds = { "wood", "sapling", "small_stone", "medium_stone", "large_stone", "stick", "dirt", "stone", "axe", "shovel", "pickaxe" };
+    private static readonly string[] ItemNames = { "Holz", "Setzling", "Kleiner Stein", "Mittlerer Stein", "Großer Stein", "Stock", "Erde", "Steinblock", "Axt", "Schaufel", "Spitzhacke" };
     private bool _miningHeld;
     private float _mineProgress;
     private string _currentTool = "Hand";
@@ -40,7 +44,10 @@ public partial class SurvivalGameplay : Node
     private static void MarkResourceConsumed(string persistentId)
     {
         if (!string.IsNullOrEmpty(persistentId))
+        {
             ConsumedResources.Add(persistentId);
+            WorldSave.Save();
+        }
     }
 
     public static void MarkWorldResourceConsumed(string persistentId)
@@ -53,6 +60,23 @@ public partial class SurvivalGameplay : Node
         ProcessMode = ProcessModeEnum.Pausable;
         _camera = player.GetNode<Camera3D>("Camera3D");
         CreateInterface();
+        _smallStone = WorldSave.Current.Inventory.GetValueOrDefault("_smallStone");
+        _mediumStone = WorldSave.Current.Inventory.GetValueOrDefault("_mediumStone");
+        _largeStone = WorldSave.Current.Inventory.GetValueOrDefault("_largeStone");
+        _sticks = WorldSave.Current.Inventory.GetValueOrDefault("_sticks");
+        _dirt = WorldSave.Current.Inventory.GetValueOrDefault("_dirt");
+        _stoneBlocks = WorldSave.Current.Inventory.GetValueOrDefault("_stoneBlocks");
+        _wood = WorldSave.Current.Inventory.GetValueOrDefault("_wood");
+        _saplings = WorldSave.Current.Inventory.GetValueOrDefault("_saplings");
+        _hasAxe = WorldSave.Current.Inventory.GetValueOrDefault("_hasAxe") != 0;
+        _hasShovel = WorldSave.Current.Inventory.GetValueOrDefault("_hasShovel") != 0;
+        _hasPickaxe = WorldSave.Current.Inventory.GetValueOrDefault("_hasPickaxe") != 0;
+        foreach (string saved in WorldSave.Current.Slots ?? new System.Collections.Generic.List<string>())
+        {
+            string[] parts = saved.Split(':');
+            if (parts.Length == 2 && int.TryParse(parts[1], out int count) && count >= 0 && count <= StackLimit)
+                _slots.Add((parts[0], count));
+        }
         RefreshInventoryText();
     }
 
@@ -268,8 +292,13 @@ public partial class SurvivalGameplay : Node
         content.AddChild(title);
         _craftInventory = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
         content.AddChild(_craftInventory);
-        _itemGrid = new GridContainer { Columns = 2 };
-        content.AddChild(_itemGrid);
+        var inventoryScroll = new ScrollContainer { CustomMinimumSize = new Vector2(600, 280) };
+        _itemGrid = new GridContainer { Columns = 6 };
+        _itemGrid.AddThemeConstantOverride("h_separation", 6);
+        _itemGrid.AddThemeConstantOverride("v_separation", 6);
+        inventoryScroll.AddChild(_itemGrid);
+        content.AddChild(inventoryScroll);
+        content.AddChild(new Label { Text = "Ziehen: verschieben / tauschen / stapeln · Rechtsklick: Stapel halbieren" });
         content.AddChild(new Label
         {
             Text = "Abgebaute Erde und Steinblöcke landen hier im Inventar.\nAxt und Schaufel: je 1 Stock + 1 großer Stein + 1 kleiner Schlagstein.\nSpitzhacke: 1 Stock + 1 großer Stein + 1 kleiner Schlagstein.",
@@ -314,42 +343,133 @@ public partial class SurvivalGameplay : Node
 
     private void RefreshInventoryText()
     {
+        WorldSave.Current.Inventory["_smallStone"] = _smallStone;
+        WorldSave.Current.Inventory["_mediumStone"] = _mediumStone;
+        WorldSave.Current.Inventory["_largeStone"] = _largeStone;
+        WorldSave.Current.Inventory["_sticks"] = _sticks;
+        WorldSave.Current.Inventory["_dirt"] = _dirt;
+        WorldSave.Current.Inventory["_stoneBlocks"] = _stoneBlocks;
+        WorldSave.Current.Inventory["_wood"] = _wood;
+        WorldSave.Current.Inventory["_saplings"] = _saplings;
+        WorldSave.Current.Inventory["_hasAxe"] = _hasAxe ? 1 : 0;
+        WorldSave.Current.Inventory["_hasShovel"] = _hasShovel ? 1 : 0;
+        WorldSave.Current.Inventory["_hasPickaxe"] = _hasPickaxe ? 1 : 0;
         if (_craftInventory != null)
             _craftInventory.Text = $"Holz: {_wood}   Setzlinge: {_saplings}\nStöcke: {_sticks}   Kleine Steine: {_smallStone}   Große Steine: {_largeStone}\nErde: {_dirt}   Steinblöcke: {_stoneBlocks}\nWerkzeuge: {(_hasAxe ? "Axt " : "")}{(_hasShovel ? "Schaufel " : "")}{(_hasPickaxe ? "Spitzhacke" : "Noch keine")}";
-        if (_itemGrid != null)
-        {
-            foreach (Node child in _itemGrid.GetChildren()) child.QueueFree();
-            _itemGrid.AddChild(CreateItemSlot("Holz", _wood, new Color(0.40f, 0.22f, 0.10f)));
-            _itemGrid.AddChild(CreateItemSlot("Setzlinge", _saplings, new Color(0.24f, 0.52f, 0.18f)));
-            _itemGrid.AddChild(CreateItemSlot("Steine", _smallStone + _largeStone, new Color(0.45f, 0.47f, 0.45f)));
-            _itemGrid.AddChild(CreateItemSlot("Erde", _dirt, new Color(0.30f, 0.18f, 0.10f)));
-        }
+        RefreshSlots();
         if (_statusLabel != null)
             _statusLabel.Text = $"Werkzeug: {_currentTool}  (1 Hand · 2 Schaufel · 3 Spitzhacke · 4 Axt)\nStöcke {_sticks}  |  kleine Steine {_smallStone}  |  große Steine {_largeStone}";
     }
 
-    private static Control CreateItemSlot(string name, int count, Color color)
+    private void RefreshSlots()
     {
-        var row = new HBoxContainer { CustomMinimumSize = new Vector2(220, 34) };
-        string iconName = name switch
+        int[] amounts = { _wood, _saplings, _smallStone, _mediumStone, _largeStone, _sticks, _dirt, _stoneBlocks, _hasAxe ? 1 : 0, _hasShovel ? 1 : 0, _hasPickaxe ? 1 : 0 };
+        while (_slots.Count < 24) _slots.Add(("", 0));
+        for (int kindIndex = 0; kindIndex < ItemKinds.Length; kindIndex++)
         {
-            "Holz" => "wood",
-            "Setzlinge" => "sapling",
-            "Steine" => "large_stone",
-            "Erde" => "dirt",
-            _ => "small_stone"
-        };
-        var icon = new TextureRect
+            string kind = ItemKinds[kindIndex];
+            int remaining = amounts[kindIndex];
+            for (int slot = 0; slot < _slots.Count; slot++)
+            {
+                if (_slots[slot].Kind != kind) continue;
+                int keep = Math.Min(_slots[slot].Count, remaining);
+                _slots[slot] = keep == 0 ? ("", 0) : (kind, keep);
+                remaining -= keep;
+            }
+            for (int slot = 0; slot < _slots.Count && remaining > 0; slot++)
+            {
+                if (_slots[slot].Kind != kind || _slots[slot].Count >= StackLimit) continue;
+                int add = Math.Min(StackLimit - _slots[slot].Count, remaining);
+                _slots[slot] = (kind, _slots[slot].Count + add);
+                remaining -= add;
+            }
+            while (remaining > 0)
+            {
+                int empty = _slots.FindIndex(item => item.Count == 0);
+                if (empty < 0) { empty = _slots.Count; _slots.Add(("", 0)); }
+                int add = Math.Min(StackLimit, remaining);
+                _slots[empty] = (kind, add);
+                remaining -= add;
+            }
+        }
+        DrawSlots();
+    }
+
+    private void SaveSlots()
+    {
+        WorldSave.Current.Slots.Clear();
+        foreach (var item in _slots) WorldSave.Current.Slots.Add(item.Kind + ":" + item.Count);
+        _main.SaveWorldChanges();
+    }
+
+    private void DrawSlots()
+    {
+        SaveSlots();
+        if (_itemGrid == null) return;
+        foreach (Node child in _itemGrid.GetChildren())
         {
-            Texture = GD.Load<Texture2D>($"res://Assets/Textures/Items/{iconName}.png"),
-            CustomMinimumSize = new Vector2(36, 36),
-            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
-            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-            MouseFilter = Control.MouseFilterEnum.Ignore
-        };
-        row.AddChild(icon);
-        row.AddChild(new Label { Text = $"  {name}  × {count}", VerticalAlignment = VerticalAlignment.Center });
-        return row;
+            _itemGrid.RemoveChild(child);
+            child.QueueFree();
+        }
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            var item = _slots[i];
+            int type = Array.IndexOf(ItemKinds, item.Kind);
+            var slot = new InventorySlot
+            {
+                SlotIndex = i, HasItem = item.Count > 0,
+                MoveStack = MoveStack, SplitStack = SplitStack,
+                CustomMinimumSize = new Vector2(94, 82),
+                TooltipText = type < 0 ? "Leer" : ItemNames[type] + " × " + item.Count
+            };
+            var box = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+            if (type >= 0)
+            {
+                string icon = item.Kind == "stone" || item.Kind == "medium_stone" ? "large_stone" : item.Kind;
+                box.AddChild(new TextureRect
+                {
+                    Texture = GD.Load<Texture2D>($"res://Assets/Textures/Items/{icon}.png"),
+                    CustomMinimumSize = new Vector2(48, 44),
+                    ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                    StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                    MouseFilter = Control.MouseFilterEnum.Ignore
+                });
+            }
+            box.AddChild(new Label { Text = type < 0 ? "·" : ItemNames[type] + "\n× " + item.Count,
+                HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore });
+            slot.AddChild(box);
+            _itemGrid.AddChild(slot);
+        }
+    }
+
+    private void MoveStack(int source, int target)
+    {
+        if (source == target || source < 0 || target < 0 || source >= _slots.Count || target >= _slots.Count) return;
+        var from = _slots[source];
+        var to = _slots[target];
+        if (from.Kind == to.Kind && to.Count < StackLimit)
+        {
+            int move = Math.Min(from.Count, StackLimit - to.Count);
+            _slots[target] = (to.Kind, to.Count + move);
+            _slots[source] = from.Count == move ? ("", 0) : (from.Kind, from.Count - move);
+        }
+        else { _slots[source] = to; _slots[target] = from; }
+        SaveSlots();
+        // Defer rebuilding controls until Godot has finished the drag callback.
+        Callable.From(DrawSlots).CallDeferred();
+    }
+
+    private void SplitStack(int source)
+    {
+        if (_slots[source].Count < 2) return;
+        int empty = _slots.FindIndex(item => item.Count == 0);
+        if (empty < 0) { empty = _slots.Count; _slots.Add(("", 0)); }
+        var item = _slots[source];
+        int half = item.Count / 2;
+        _slots[source] = (item.Kind, item.Count - half);
+        _slots[empty] = (item.Kind, half);
+        SaveSlots();
+        Callable.From(DrawSlots).CallDeferred();
     }
 
     private void SelectTool(string tool)

@@ -31,3 +31,14 @@ The artifact is temporary and retained for 14 days. A successful export has not 
 - Dig during construction; remaining decoration should sample the updated height grid.
 
 Validation in the editing environment: diff whitespace checks and code review only. Godot/.NET build and runtime profiling have not been executed.
+
+## Version 0.1.2: autosave and slot inventory
+
+- Dig across a chunk seam, collect stones/sticks, craft a tool, rearrange and split stacks (right click). Close and restart: seed, holes, consumed resources, counts and slot arrangement must remain.
+- With `WorldSeed = 0`, restart resumes the last seed. An explicit different seed uses its own save; returning to the first seed restores its changes.
+- Drag onto an empty slot, a different item, and a nearly full identical stack. Quantities must be conserved; maximum stack size is 99. Collect and craft after rearranging.
+- Grow/harvest a bush, leave/reload its chunk and restart. Harvest state must persist; growth checkpoints occur every five seconds and at normal shutdown.
+- Back up saves before testing damaged/unwritable saves. Verify the HUD reports SPEICHERFEHLER and an unreadable existing save is not overwritten.
+- Compare rendering and interaction on the laptop. Build/runtime validation is still required; no successful build is claimed by this change.
+
+Saves are local to this machine under Godot `user://worlds`, not committed to GitHub. World mutations and inventory actions write snapshots synchronously; very large saves may cause disk-related frame spikes.
