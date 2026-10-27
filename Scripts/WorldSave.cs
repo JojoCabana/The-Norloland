@@ -7,8 +7,19 @@ using System.Text.Json;
 // One local save slot per seed. A zero Inspector seed resumes the last world.
 public static class WorldSave
 {
+    public sealed class Drop
+    {
+        public string Id { get; set; } = "";
+        public string Kind { get; set; } = "";
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float Z { get; set; }
+    }
+
     public sealed class Data
     {
+        public List<Drop> Drops { get; set; } = new();
+        public Dictionary<string, int> Health { get; set; } = new();
         public int Format { get; set; } = 1;
         public int Seed { get; set; }
         public Dictionary<string, float> Depth { get; set; } = new();
@@ -48,6 +59,8 @@ public static class WorldSave
                     loaded.Growth == null || loaded.Inventory == null)
                     throw new InvalidDataException("Invalid world save.");
                 loaded.Slots ??= new List<string>();
+                loaded.Drops ??= new List<Drop>();
+                loaded.Health ??= new Dictionary<string, int>();
                 Current = loaded;
             }
             else Current = new Data { Seed = seed };

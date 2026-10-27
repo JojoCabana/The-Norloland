@@ -5,7 +5,7 @@ using System.Linq;
 
 public partial class Main : Node3D
 {
-    public const string AppVersion = "0.1.4";
+    public const string AppVersion = "0.1.5";
 
     private sealed class ChunkBuildJob
     {
@@ -1379,6 +1379,11 @@ public partial class Main : Node3D
                 biome,
                 $"{WorldSeed}:bush:{worldX}:{worldZ}:{i}",
                 (float)random.NextDouble() * 0.78f + 0.18f);
+            if (SurvivalGameplay.IsResourceConsumed(bush.PersistentId))
+            {
+                bush.Free();
+                continue;
+            }
             bush.Position = new Vector3(px, y, pz);
             chunk.AddChild(bush);
         }
@@ -1426,6 +1431,7 @@ public partial class Main : Node3D
                 var deposit = CreateResourceNode("stone_deposit", 0.40f, 5, random);
                 deposit.Name = "StoneDeposit";
                 deposit.PersistentId = persistentId;
+                deposit.HitPoints = WorldSave.Current.Health.GetValueOrDefault(persistentId, 5);
                 deposit.Position = new Vector3(px, y + 0.25f, pz);
                 chunk.AddChild(deposit);
             }
@@ -1438,6 +1444,7 @@ public partial class Main : Node3D
         {
             ResourceKind = kind,
             HitPoints = hitPoints,
+            MaxHitPoints = hitPoints,
             CollisionLayer = 1,
             CollisionMask = 0
         };

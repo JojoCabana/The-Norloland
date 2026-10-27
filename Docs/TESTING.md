@@ -46,3 +46,13 @@ Saves are local to this machine under Godot `user://worlds`, not committed to Gi
 ## Version 0.1.4: Godot 4.7.2 .NET
 
 The C# SDK and CI editor/export templates target 4.7.2. Desktop target remains net8.0, matching the upstream 4.7.2 project generator. Use the .NET edition of the editor. Restart the editor after pulling and rebuild the solution. CI now also builds pushes to the performance branch. A successful build/export and runtime test must be confirmed separately.
+
+## Version 0.1.5: visible harvesting and persistent drops
+
+- Aim at a stone deposit with the pickaxe selected and hold left click. The bar above the target must advance over all five hits. Switching targets or releasing cancels progress for the current hit; completed hits persist.
+- On the final hit, fragments animate and one large plus one small collectible stone appear. Inventory only increases after pressing E on each drop. Restart before collecting: drops must survive, the original deposit must stay absent.
+- A green bush is distinct from bare branches. One left click breaks it into 1–4 forked wooden sticks. E collects each stick; E on the intact bush only explains the controls.
+- Leave/reload the chunk and restart before/after collecting branches: no original bush or collected drop may reappear. Existing saves without Drops/Health must load.
+- Open the inventory while mining; the progress bar must hide and mining must stop.
+
+This is a short procedural fragment effect, not a physics-based fracture simulation.

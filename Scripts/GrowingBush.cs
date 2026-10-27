@@ -14,6 +14,9 @@ public partial class GrowingBush : Node3D
     private float _growthSaveTimer;
     private Node3D _visual = null!;
     private Color _biomeTint = Colors.White;
+    public string PersistentId => _persistentId;
+    public int StickYield => 1 + Mathf.RoundToInt(_growth * 3.0f);
+    private static Mesh _canopyMesh;
     private int _seed;
     private string _persistentId = "";
     private float _initialGrowth;
@@ -75,7 +78,7 @@ public partial class GrowingBush : Node3D
     {
         if (_visual == null)
             return;
-        float height = Mathf.Lerp(0.25f, MatureHeight, _growth);
+        float height = Mathf.Lerp(0.8f, MatureHeight, _growth);
         _visual.Scale = new Vector3(height / MatureHeight, height / MatureHeight, height / MatureHeight);
     }
 
@@ -138,11 +141,22 @@ public partial class GrowingBush : Node3D
             CullMode = BaseMaterial3D.CullModeEnum.Disabled
         };
         AddMultiMesh("BushLeaves", _leafMesh ??= CreateLeafMesh(), leafMaterial, leafTransforms);
+        // Broad green clusters make a living bush distinct from bare loose branches.
+        _canopyMesh ??= new SphereMesh { Radius = 1, Height = 2, RadialSegments = 8, Rings = 4 };
+        var canopy = new List<Transform3D>();
+        for (int i = 0; i < 5; i++)
+        {
+            float angle = i * Mathf.Tau / 5;
+            canopy.Add(new Transform3D(Basis.FromScale(new Vector3(0.32f, 0.38f, 0.32f)),
+                new Vector3(Mathf.Cos(angle) * 0.28f, 0.65f + i % 2 * 0.16f, Mathf.Sin(angle) * 0.28f)));
+        }
+        AddMultiMesh("BushCanopy", _canopyMesh, leafMaterial, canopy);
 
         var pickArea = new ResourceNode
         {
             Name = "BushHarvestArea",
             ResourceKind = "bush",
+            PersistentId = _persistentId,
             Bush = this,
             CollisionLayer = 1,
             CollisionMask = 0

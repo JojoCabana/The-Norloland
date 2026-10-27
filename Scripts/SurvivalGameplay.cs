@@ -21,6 +21,12 @@ public partial class SurvivalGameplay : Node
     private const int StackLimit = 99;
     private static readonly string[] ItemKinds = { "wood", "sapling", "small_stone", "medium_stone", "large_stone", "stick", "dirt", "stone", "axe", "shovel", "pickaxe" };
     private static readonly string[] ItemNames = { "Holz", "Setzling", "Kleiner Stein", "Mittlerer Stein", "Großer Stein", "Stock", "Erde", "Steinblock", "Axt", "Schaufel", "Spitzhacke" };
+    private ProgressBar _miningBar;
+    private ulong _miningTarget;
+    private static Mesh _dropStoneMesh;
+    private static Mesh _dropStickMesh;
+    private static Material _dropStoneMaterial;
+    private static Material _dropStickMaterial;
     private bool _miningHeld;
     private float _mineProgress;
     private string _currentTool = "Hand";
@@ -78,6 +84,8 @@ public partial class SurvivalGameplay : Node
                 _slots.Add((parts[0], count));
         }
         RefreshInventoryText();
+        foreach (var drop in WorldSave.Current.Drops)
+            CreateDropVisual(drop);
     }
 
     public override void _Input(InputEvent @event)
@@ -86,6 +94,15 @@ public partial class SurvivalGameplay : Node
         {
             _miningHeld = mouseButton.Pressed && Input.MouseMode == Input.MouseModeEnum.Captured;
             if (!_miningHeld) _mineProgress = 0.0f;
+            if (_miningHeld && !CraftingVisible && TryGetLookHit(out var bushHit))
+            {
+                ResourceNode bush = GetResourceNode(bushHit);
+                if (bush?.ResourceKind == "bush")
+                {
+                    BreakBush(bush);
+                    _miningHeld = false;
+                }
+            }
             return;
         }
 
@@ -114,8 +131,9 @@ public partial class SurvivalGameplay : Node
 
     public override void _Process(double delta)
     {
+        _miningBar.Visible = false;
         UpdateAimPrompt();
-        if (_miningHeld)
+        if (_miningHeld && Input.MouseMode == Input.MouseModeEnum.Captured)
             UpdateMining((float)delta);
     }
 
@@ -131,7 +149,8 @@ public partial class SurvivalGameplay : Node
         {
             _targetPrompt.Text = resource.ResourceKind switch
             {
-                "bush" => "E · Stöcke sammeln",
+                "bush" => "Linksklick · Busch zerschlagen",
+                "stick" => "E · Ast aufheben",
                 "tree" => _hasAxe ? "Linksklick halten · Baum fällen" : "Baum · Axt nötig",
                 "stone_deposit" => _hasPickaxe ? "Linksklick halten · Fels abbauen" : "Fels · Spitzhacke nötig",
                 _ => "E · Aufheben"
@@ -154,6 +173,9 @@ public partial class SurvivalGameplay : Node
     public void ShowCraftingMenu()
     {
         _craftPanel.Visible = true;
+        _miningHeld = false;
+        _mineProgress = 0;
+        _miningBar.Visible = false;
         _craftBackdrop.Visible = true;
         _crosshair.Visible = false;
         _targetPrompt.Visible = false;
@@ -237,6 +259,13 @@ public partial class SurvivalGameplay : Node
         _targetPrompt.AddThemeColorOverride("font_color", new Color(1.0f, 0.95f, 0.78f));
         _targetPrompt.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.95f));
         centerStack.AddChild(_targetPrompt);
+        _miningBar = new ProgressBar
+        {
+            MinValue = 0, MaxValue = 100, ShowPercentage = true,
+            Size = new Vector2(130, 18), Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        layer.AddChild(_miningBar);
 
         _craftBackdrop = new ColorRect
         {
@@ -503,10 +532,7 @@ public partial class SurvivalGameplay : Node
             return;
         if (resource.ResourceKind == "bush" && resource.Bush != null)
         {
-            int amount = resource.Bush.Harvest();
-            _sticks += amount;
-            _hintLabel.Text = $"Du sammelst {amount} Stock/Äste. Die Triebe wachsen langsam nach.";
-            RefreshInventoryText();
+            _hintLabel.Text = "Schlage den Busch mit Linksklick; hebe die Äste danach mit E auf.";
         }
         else if (resource.ResourceKind == "tree")
         {
@@ -524,19 +550,24 @@ public partial class SurvivalGameplay : Node
             _hintLabel.Text = $"Baum gefällt: +{wood} Holz, +1 Setzling.";
             RefreshInventoryText();
         }
-        else if (resource.ResourceKind.StartsWith("small_stone", StringComparison.Ordinal) ||
+        else if (resource.ResourceKind == "stick" || resource.ResourceKind.StartsWith("small_stone", StringComparison.Ordinal) ||
                  resource.ResourceKind.StartsWith("medium_stone", StringComparison.Ordinal) ||
                  resource.ResourceKind.StartsWith("large_stone", StringComparison.Ordinal))
         {
             switch (resource.ResourceKind)
             {
+                case "stick": _sticks++; break;
                 case "small_stone": _smallStone++; break;
                 case "medium_stone": _smallStone++; break;
                 case "large_stone": _largeStone++; break;
             }
-            MarkResourceConsumed(resource.PersistentId);
+            if (resource.IsLooseDrop)
+                WorldSave.Current.Drops.RemoveAll(drop => drop.Id == resource.PersistentId);
+            else
+                ConsumedResources.Add(resource.PersistentId);
+            resource.CollisionLayer = 0;
             resource.QueueFree();
-            _hintLabel.Text = "Stein aufgehoben.";
+            _hintLabel.Text = resource.ResourceKind == "stick" ? "Ast aufgehoben." : "Stein aufgehoben.";
             RefreshInventoryText();
         }
     }
@@ -551,6 +582,14 @@ public partial class SurvivalGameplay : Node
         }
 
         ResourceNode resource = GetResourceNode(hit);
+        ulong target = hit["collider"].AsGodotObject().GetInstanceId();
+        if (target != _miningTarget) { _mineProgress = 0; _miningTarget = target; }
+        if (resource?.ResourceKind == "bush")
+        {
+            BreakBush(resource);
+            _miningHeld = false;
+            return;
+        }
         if (resource != null && resource.ResourceKind == "tree" && (!_hasAxe || _currentTool != "Axe"))
         {
             _hintLabel.Text = "Zum Fällen brauchst du eine Axt und musst sie mit 4 auswählen.";
@@ -587,20 +626,27 @@ public partial class SurvivalGameplay : Node
             }
             _mineProgress += delta;
             float required = 1.35f;
+            ShowMiningProgress(resource, required);
             _hintLabel.Text = $"Stein abbauen  [{Mathf.Clamp(_mineProgress / required * 100.0f, 0, 100):F0}%]";
             if (_mineProgress >= required)
             {
                 _mineProgress -= required;
                 resource.HitPoints--;
+                WorldSave.Current.Health[resource.PersistentId] = resource.HitPoints;
                 if (resource.HitPoints <= 0)
                 {
-                    _largeStone++;
-                    _smallStone++;
-                    MarkResourceConsumed(resource.PersistentId);
+                    Vector3 position = resource.GlobalPosition;
+                    AddDrops(position, new[] { "large_stone", "small_stone" });
+                    ConsumedResources.Add(resource.PersistentId);
+                    WorldSave.Current.Health.Remove(resource.PersistentId);
+                    resource.CollisionLayer = 0;
                     resource.QueueFree();
-                    _hintLabel.Text = "Du gewinnst einen großen und einen kleinen Stein.";
-                    RefreshInventoryText();
+                    PlayBreakEffect(position, false);
+                    _miningBar.Visible = false;
+                    _mineProgress = 0;
+                    _hintLabel.Text = "Stein zerbrochen · E zum Aufheben der Stücke";
                 }
+                WorldSave.Save();
             }
             return;
         }
@@ -649,6 +695,90 @@ public partial class SurvivalGameplay : Node
 
         _mineProgress = 0.0f;
         _hintLabel.Text = "";
+    }
+
+    private void ShowMiningProgress(ResourceNode resource, float secondsPerHit)
+    {
+        Vector3 above = resource.GlobalPosition + Vector3.Up * 0.9f;
+        if (_camera.IsPositionBehind(above)) return;
+        _miningBar.Position = _camera.UnprojectPosition(above) - new Vector2(65, 24);
+        float completed = resource.MaxHitPoints - resource.HitPoints;
+        _miningBar.Value = (completed + Mathf.Clamp(_mineProgress / secondsPerHit, 0, 1)) / resource.MaxHitPoints * 100;
+        _miningBar.Visible = true;
+    }
+
+    private void BreakBush(ResourceNode resource)
+    {
+        if (resource.Bush == null || resource.Bush.IsQueuedForDeletion() || IsResourceConsumed(resource.PersistentId)) return;
+        GrowingBush bush = resource.Bush;
+        Vector3 origin = bush.GlobalPosition;
+        var kinds = new string[bush.StickYield];
+        Array.Fill(kinds, "stick");
+        AddDrops(origin, kinds);
+        ConsumedResources.Add(resource.PersistentId);
+        resource.CollisionLayer = 0;
+        bush.QueueFree();
+        WorldSave.Save();
+        PlayBreakEffect(origin + Vector3.Up * 0.5f, true);
+        _hintLabel.Text = "Busch zerlegt · E zum Aufheben der Äste";
+    }
+
+    private void AddDrops(Vector3 origin, string[] kinds)
+    {
+        for (int i = 0; i < kinds.Length; i++)
+        {
+            float angle = i * Mathf.Tau / kinds.Length;
+            Vector3 end = origin + new Vector3(Mathf.Cos(angle) * 0.65f, 0, Mathf.Sin(angle) * 0.65f);
+            end.Y = _main.GetGroundHeight(end.X, end.Z) + 0.14f;
+            var drop = new WorldSave.Drop { Id = Guid.NewGuid().ToString("N"), Kind = kinds[i], X = end.X, Y = end.Y, Z = end.Z };
+            WorldSave.Current.Drops.Add(drop);
+            ResourceNode node = CreateDropVisual(drop);
+            node.GlobalPosition = origin + Vector3.Up * 0.4f;
+            node.CreateTween().TweenProperty(node, "global_position", end, 0.3).SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
+        }
+    }
+
+    private ResourceNode CreateDropVisual(WorldSave.Drop drop)
+    {
+        bool stick = drop.Kind == "stick";
+        var node = new ResourceNode { ResourceKind = drop.Kind, PersistentId = drop.Id,
+            IsLooseDrop = true, CollisionLayer = 1, CollisionMask = 0 };
+        node.AddChild(new CollisionShape3D { Shape = new SphereShape3D { Radius = 0.3f } });
+        _dropStoneMesh ??= new SphereMesh { Radius = 1, Height = 1.6f, RadialSegments = 6, Rings = 3 };
+        _dropStickMesh ??= new CylinderMesh { TopRadius = 0.025f, BottomRadius = 0.045f, Height = 0.8f, RadialSegments = 6 };
+        _dropStoneMaterial ??= new StandardMaterial3D { AlbedoColor = new Color(0.60f, 0.62f, 0.61f), Roughness = 1 };
+        _dropStickMaterial ??= new StandardMaterial3D { AlbedoColor = new Color(0.48f, 0.26f, 0.10f), Roughness = 1 };
+        node.AddChild(new MeshInstance3D { Mesh = stick ? _dropStickMesh : _dropStoneMesh,
+            MaterialOverride = stick ? _dropStickMaterial : _dropStoneMaterial,
+            Rotation = stick ? new Vector3(0, 0.4f, Mathf.Pi * 0.5f) : Vector3.Zero,
+            Scale = stick ? Vector3.One : Vector3.One * (drop.Kind == "large_stone" ? 0.22f : 0.12f) });
+        if (stick)
+            node.AddChild(new MeshInstance3D { Mesh = _dropStickMesh, MaterialOverride = _dropStickMaterial,
+                Position = new Vector3(0.1f, 0.02f, 0.1f), Rotation = new Vector3(0.5f, 0, 0.8f), Scale = Vector3.One * 0.5f });
+        _main.AddChild(node);
+        node.GlobalPosition = new Vector3(drop.X, drop.Y, drop.Z);
+        return node;
+    }
+
+    private void PlayBreakEffect(Vector3 origin, bool wood)
+    {
+        // Short-lived visual fragments, separate from the persistent collectible drops.
+        for (int i = 0; i < 7; i++)
+        {
+            float angle = i * Mathf.Tau / 7;
+            var fragment = new MeshInstance3D
+            {
+                Mesh = wood ? _dropStickMesh : _dropStoneMesh,
+                MaterialOverride = wood ? _dropStickMaterial : _dropStoneMaterial,
+                Scale = Vector3.One * (wood ? 0.35f : 0.08f)
+            };
+            _main.AddChild(fragment);
+            fragment.GlobalPosition = origin;
+            var tween = fragment.CreateTween();
+            tween.TweenProperty(fragment, "global_position", origin + new Vector3(Mathf.Cos(angle) * 0.6f, 0.5f, Mathf.Sin(angle) * 0.6f), 0.16);
+            tween.TweenProperty(fragment, "scale", Vector3.Zero, 0.22);
+            tween.TweenCallback(Callable.From(fragment.QueueFree));
+        }
     }
 
     private bool TryGetLookHit(out Godot.Collections.Dictionary hit)
