@@ -1,12 +1,16 @@
-# Wasserlabor – Prototyp 0.1.6
+# Wasserlabor – Prototyp 0.1.7
 
 ## Start direkt in der laufenden Welt
 
-F7 erzeugt einen begrenzten 20×20-Testbereich als Kind der bestehenden Welt. Es findet kein Szenenwechsel statt; die normale Spielfigur bleibt an ihrem Ort stehen, die Kamera blickt auf den Testbereich. Der Bereich liegt erhöht neben der Spielfigur, damit bestehendes Gelände und Spielstände nicht verändert werden. F7 oder Escape entfernt das Labor und kehrt zur Spielfigur zurück. Erneutes Öffnen beginnt mit leerem Wasser.
+F7 formt eine temporäre Senke im bestehenden Gelände neben der Spielfigur und zeigt sie mit einer Übersichtskamera. Wasser liegt auf diesem Gelände: Es gibt keinen schwebenden Boden oder Beckenboxen mehr. Die Senke blendet an ihrem Rand in das ursprüngliche Höhenprofil über. Betroffene Gelände-Meshes und Kollisionen werden aktualisiert; Vegetation in betroffenen Chunks wird während des Tests ausgeblendet. F7/Escape beendet den Test und stellt das ursprüngliche Gelände wieder her. Die Spielfigur bleibt am Ausgangsort.
+
+Schüssel (2 L) und Krug (5 L) stehen für den Prototyp als Startgefäße im Slotinventar bereit. Im Labor wählt V das Gefäß, Linksklick eine gelb markierte Wasserzelle, B füllt und P gießt aus. Es wird nur die verfügbare Menge bis zum Fassungsvermögen übertragen (1 m³ = 1000 L). Der Zellenwert zeigt auch kleine Mengenänderungen. Gefäßfüllstände werden gespeichert, das Laborwasser und die temporäre Geländeform noch nicht. Noch kein freies Befüllen aus der Egoansicht oder Gefäß-Crafting.
 
 | Taste | Funktion |
 | --- | --- |
 | F7 | Wasserlabor erzeugen / schließen |
+| V / B / P | Gefäß wählen / füllen / ausgießen |
+| Linksklick | Entnahme-/Ausgießzelle wählen |
 | R | Regen an/aus |
 | D | Damm öffnen/schließen |
 | Leertaste | Wasserberechnung pausieren |
@@ -26,7 +30,7 @@ F7 erzeugt einen begrenzten 20×20-Testbereich als Kind der bestehenden Welt. Es
 
 ## Grenzen und Ausrichtung
 
-Das Labor ist in die vorhandene Szene eingebettet, aber hydraulisch nicht mit der prozeduralen Welt verbunden. Es ist kein flächendeckendes Wettersystem. Graben und Dämmebauen auf dem eigentlichen Spielgelände, freie Wasserfälle, Höhlenwasser, Chunk-übergreifende Wasserzustände, Speicherung des Laborwassers, Wasserrad und Stromerzeugung sind noch nicht implementiert. Die Shader-Wellen sind rein optisch und verändern kein Volumen. Zellübergänge können sichtbar bleiben; es handelt sich nicht um ein vollständig geglättetes Flüssigkeitsmesh. Der Lens Flare ist stilisiert und hat keine geometrische Verdeckungsprüfung.
+Das Labor ist in die vorhandene Szene eingebettet, aber hydraulisch nicht mit der prozeduralen Welt verbunden. Es ist kein flächendeckendes Wettersystem. Graben und Dämmebauen auf dem eigentlichen Spielgelände, freie Wasserfälle, Höhlenwasser, Chunk-übergreifende Wasserzustände, Speicherung des Laborwassers, Wasserrad und Stromerzeugung sind noch nicht implementiert. Die Wasseroberfläche verwendet nun gemeinsame Eckhöhen statt überlappender Einzelkacheln. Die Shader-Wellen sind rein optisch und verändern kein Volumen. Zellübergänge können sichtbar bleiben; es handelt sich nicht um ein vollständig geglättetes Flüssigkeitsmesh. Der Lens Flare ist stilisiert und hat keine geometrische Verdeckungsprüfung.
 
 Die Wasserberechnung in Scripts/WaterGrid.cs ist von Godot, Oberfläche und Darstellung getrennt. Das erleichtert Tests und eine spätere maßgebliche Serverberechnung, stellt aber selbst noch keinen Multiplayer her.
 

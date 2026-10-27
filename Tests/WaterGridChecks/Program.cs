@@ -25,6 +25,17 @@ static class Checks
         var overflow = new WaterGrid(2, 1) { DamCrest = 2 };
         overflow.Water[0] = 3; overflow.Step(0.05, 0);
         Check(overflow.Water[1] > 0, "Dam cannot overflow");
+        var pool = new WaterGrid(2, 1);
+        pool.Put(0, 0.001); // one litre
+        var bowl = new WaterVessel { CapacityLitres = 2 };
+        Check(Math.Abs(bowl.Fill(pool, 0) - 1) < 1e-10 && pool.Volume == 0, "Partial fill creates water");
+        Check(bowl.Fill(pool, 0) == 0, "Dry pool fills vessel");
+        pool.Put(0, 0.010);
+        Check(Math.Abs(bowl.Fill(pool, 0) - 1) < 1e-10 && bowl.Litres == 2, "Capacity exceeded");
+        Check(bowl.Fill(pool, 0) == 0, "Full vessel takes more water");
+        double before = pool.Volume + bowl.Litres / 1000;
+        bowl.Pour(pool, 1);
+        Check(bowl.Litres == 0 && Math.Abs(pool.Volume - before) < 1e-10, "Pour loses water");
         var dry = new WaterGrid(4, 4); dry.Step(0.05, 0);
         Check(dry.Volume == 0, "Dry grid generates water");
         Console.WriteLine("PASS: conservation, nonnegative volumes, rain, closed/open dam, overflow and dry grid.");

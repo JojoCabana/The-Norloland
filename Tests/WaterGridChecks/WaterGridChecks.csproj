@@ -1,4 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup>
-  <ItemGroup><Compile Include="../../Scripts/WaterGrid.cs" Link="WaterGrid.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../Scripts/WaterGrid.cs" Link="WaterGrid.cs" /><Compile Include="../../Scripts/WaterVessel.cs" Link="WaterVessel.cs" /></ItemGroup>
 </Project>

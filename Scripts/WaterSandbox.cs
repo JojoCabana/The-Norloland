@@ -9,7 +9,11 @@ public partial class WaterSandbox : Node3D
     private const int Size = 20;
     private const double Tick = 0.05;
     private WaterGrid _grid;
-    private MultiMesh _water;
+    private MeshInstance3D _waterSurface;
+    private int _selectedCell = 10 * Size + 8;
+    private int _selectedVessel;
+    private MeshInstance3D _selection;
+    private string _waterMessage = "Gefäß mit V wählen, Zelle anklicken, B füllen / P ausgießen";
     private Node3D _dam;
     private Camera3D _camera;
     private Label _hud;
@@ -27,29 +31,23 @@ public partial class WaterSandbox : Node3D
     public override void _Ready()
     {
         Input.MouseMode = Input.MouseModeEnum.Visible;
-        _grid = new WaterGrid(Size, Size);
+        _grid = new WaterGrid(Size, Size) { DamCrest = -0.7 };
         for (int z = 0; z < Size; z++)
         for (int x = 0; x < Size; x++)
         {
-            float cross = (z - 9.5f) / 9.5f;
-            _grid.Ground[z * Size + x] = 0.15 + cross * cross * 2.5 + (Size - 1 - x) * 0.035;
+            float wx = GlobalPosition.X + x - 9.5f;
+            float wz = GlobalPosition.Z + z - 9.5f;
+            _grid.Ground[z * Size + x] = (OwnerWorld.GetGroundHeight(wx - 0.5f, wz - 0.5f)
+                + OwnerWorld.GetGroundHeight(wx + 0.5f, wz - 0.5f)
+                + OwnerWorld.GetGroundHeight(wx - 0.5f, wz + 0.5f)
+                + OwnerWorld.GetGroundHeight(wx + 0.5f, wz + 0.5f)) * 0.25 - GlobalPosition.Y;
         }
-        var ground = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
-            UseColors = true, Mesh = new BoxMesh(), InstanceCount = Size * Size };
-        for (int z = 0; z < Size; z++)
-        for (int x = 0; x < Size; x++)
-        {
-            int i = z * Size + x;
-            float h = (float)_grid.Ground[i] + 0.8f;
-            ground.SetInstanceTransform(i, new Transform3D(Basis.FromScale(new Vector3(1, h, 1)), new Vector3(x - 9.5f, h * 0.5f - 0.8f, z - 9.5f)));
-            ground.SetInstanceColor(i, new Color(0.26f + h * 0.035f, 0.34f + h * 0.025f, 0.18f));
-        }
-        AddChild(new MultiMeshInstance3D { Multimesh = ground,
-            MaterialOverride = new StandardMaterial3D { VertexColorUseAsAlbedo = true, Roughness = 1 } });
-        _water = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
-            Mesh = new PlaneMesh { Size = new Vector2(1.01f, 1.01f), SubdivideWidth = 2, SubdivideDepth = 2 }, InstanceCount = Size * Size };
-        AddChild(new MultiMeshInstance3D { Multimesh = _water,
-            MaterialOverride = new ShaderMaterial { Shader = GD.Load<Shader>("res://Shaders/sandbox_water.gdshader") } });
+        _waterSurface = new MeshInstance3D {
+            MaterialOverride = new ShaderMaterial { Shader = GD.Load<Shader>("res://Shaders/sandbox_water.gdshader") } };
+        AddChild(_waterSurface);
+        _selection = new MeshInstance3D { Mesh = new TorusMesh { InnerRadius = 0.30f, OuterRadius = 0.40f },
+            MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(1, 0.8f, 0.1f), ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded } };
+        AddChild(_selection);
         _dam = new Node3D(); AddChild(_dam);
         for (int z = 0; z < Size; z++)
         {
@@ -60,8 +58,6 @@ public partial class WaterSandbox : Node3D
                 Position = new Vector3(0, groundY + height * 0.5f, z - 9.5f),
                 MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.48f, 0.34f, 0.19f), Roughness = 0.9f } });
         }
-        var light = new DirectionalLight3D { LightColor = new Color(1, 0.88f, 0.7f), LightEnergy = 1.3f, ShadowEnabled = true };
-        AddChild(light); light.Position = _sun; light.LookAt(ToGlobal(Vector3.Zero));
         _camera = new Camera3D { Current = true, Far = 100, Fov = 55 }; AddChild(_camera); UpdateCamera();
         _rain = new CpuParticles3D {
             Amount = 500, Lifetime = 1.5, Emitting = true,
@@ -80,7 +76,7 @@ public partial class WaterSandbox : Node3D
         _capturePreview = Array.IndexOf(OS.GetCmdlineUserArgs(), "--water-preview") >= 0;
         if (_capturePreview)
         {
-            for (int i = 0; i < 1400; i++) _grid.Step(Tick, 0.04);
+            for (int i = 0; i < 500; i++) _grid.Step(Tick, 0.04);
             _raining = false;
         }
         UpdateWater();
@@ -92,9 +88,28 @@ public partial class WaterSandbox : Node3D
     }
     public override void _UnhandledInput(InputEvent input)
     {
+        if (input is InputEventMouseButton mouse && mouse.Pressed && mouse.ButtonIndex == MouseButton.Left)
+        {
+            Vector3 origin = _camera.ProjectRayOrigin(mouse.Position);
+            Vector3 direction = _camera.ProjectRayNormal(mouse.Position);
+            if (Mathf.Abs(direction.Y) > 0.001f)
+            {
+                float t = (GlobalPosition.Y - 1 - origin.Y) / direction.Y;
+                Vector3 local = ToLocal(origin + direction * t);
+                int x = Mathf.FloorToInt(local.X + 10), z = Mathf.FloorToInt(local.Z + 10);
+                if (t > 0 && x >= 0 && x < Size && z >= 0 && z < Size) _selectedCell = z * Size + x;
+            }
+        }
         if (input is not InputEventKey key || !key.Pressed || key.Echo) return;
         switch (key.PhysicalKeycode)
         {
+            case Key.V: _selectedVessel = (_selectedVessel + 1) % WorldSave.Current.Vessels.Count; break;
+            case Key.B:
+                _waterMessage = $"Entnommen: {WorldSave.Current.Vessels[_selectedVessel].Fill(_grid, _selectedCell):F3} Liter";
+                WorldSave.Save(); UpdateWater(); break;
+            case Key.P:
+                _waterMessage = $"Ausgegossen: {WorldSave.Current.Vessels[_selectedVessel].Pour(_grid, _selectedCell):F3} Liter";
+                WorldSave.Save(); UpdateWater(); break;
             case Key.R: _raining = !_raining; break;
             case Key.D: _grid.DamClosed = !_grid.DamClosed; _dam.Visible = _grid.DamClosed; break;
             case Key.Space: _paused = !_paused; break;
@@ -107,13 +122,13 @@ public partial class WaterSandbox : Node3D
     }
     private WaterGrid ResetGrid()
     {
-        var reset = new WaterGrid(Size, Size) { DamClosed = _grid.DamClosed };
+        var reset = new WaterGrid(Size, Size) { DamClosed = _grid.DamClosed, DamCrest = _grid.DamCrest };
         Array.Copy(_grid.Ground, reset.Ground, _grid.Ground.Length);
         return reset;
     }
     public override void _Process(double delta)
     {
-        if (_capturePreview && ++_previewFrames == 90)
+        if (_capturePreview && ++_previewFrames == 180)
         {
             string path = ProjectSettings.GlobalizePath("res://build/water-preview.png");
             var error = GetViewport().GetTexture().GetImage().SavePng(path);
@@ -124,13 +139,17 @@ public partial class WaterSandbox : Node3D
         if (!_paused)
         {
             _accumulator = Math.Min(_accumulator + delta, Tick * 4);
+            bool changed = false;
             while (_accumulator >= Tick)
             {
                 _grid.Step(Tick, _raining ? 0.04 : 0);
                 _accumulator -= Tick;
+                changed = true;
             }
-            UpdateWater();
+            if (changed) UpdateWater();
         }
+        int sx = _selectedCell % Size, sz = _selectedCell / Size;
+        _selection.Position = new Vector3(sx - 9.5f, (float)(_grid.Ground[_selectedCell] + _grid.Water[_selectedCell]) + 0.06f, sz - 9.5f);
         Vector2 viewport = GetViewport().GetVisibleRect().Size;
         Vector2 sunPixel = _camera.UnprojectPosition(ToGlobal(_sun));
         _flare.Visible = _flareEnabled && !_camera.IsPositionBehind(ToGlobal(_sun)) &&
@@ -146,19 +165,46 @@ public partial class WaterSandbox : Node3D
                 $"R Regen: {(_raining ? "AN" : "AUS")}   D Damm: {(_grid.DamClosed ? "ZU" : "OFFEN")}   Leertaste: Pause {(_paused ? "AN" : "AUS")}\n" +
                 "← → Kamera   F Lens Flare   Rücktaste: Wasser leeren   F7 / Esc: Spielfigur\n" +
                 $"Wasser: {_grid.Volume:F2} m³   Regen gesamt: {_grid.RainAdded:F2} m³\n" +
-                $"Durchfluss am Damm: {_grid.LastDamFlow:F2} m³/s   Bilanzfehler: {_grid.Volume - _grid.RainAdded:E1}\n" +
-                "Geschlossene Ränder · beschleunigter Regen · kein Wasserrad / kein Speichern";
+                $"Durchfluss am Damm: {_grid.LastDamFlow:F2} m³/s   Bilanzfehler: {_grid.Volume - _grid.RainAdded + _grid.Taken - _grid.Returned:E1}\n" +
+                $"V Gefäß: {WorldSave.Current.Vessels[_selectedVessel].Name}  {WorldSave.Current.Vessels[_selectedVessel].Litres:F3}/{WorldSave.Current.Vessels[_selectedVessel].CapacityLitres:F1} L · B füllen · P ausgießen\n" +
+                $"Zelle {sx},{sz}: {_grid.Water[_selectedCell] * 1000:F3} L · {_waterMessage}\n" +
+                "Beschleunigter Regen · Laborwasser temporär · Gefäßfüllung gespeichert";
         }
     }
     private void UpdateWater()
     {
+        var heights = new float[Size + 1, Size + 1];
+        for (int z = 0; z <= Size; z++)
+        for (int x = 0; x <= Size; x++)
+        {
+            double sum = 0; int count = 0;
+            for (int dz = -1; dz <= 0; dz++)
+            for (int dx = -1; dx <= 0; dx++)
+            {
+                int cx = x + dx, cz = z + dz;
+                if (cx < 0 || cx >= Size || cz < 0 || cz >= Size) continue;
+                int i = cz * Size + cx;
+                if (_grid.Water[i] <= 0.008) continue;
+                sum += _grid.Ground[i] + _grid.Water[i]; count++;
+            }
+            heights[x,z] = count > 0 ? (float)(sum / count) : -10;
+        }
+        var surface = new SurfaceTool();
+        surface.Begin(Mesh.PrimitiveType.Triangles);
+        bool any = false;
         for (int z = 0; z < Size; z++)
         for (int x = 0; x < Size; x++)
         {
-            int i = z * Size + x;
-            bool wet = _grid.Water[i] > 0.008;
-            _water.SetInstanceTransform(i, new Transform3D(Basis.FromScale(wet ? Vector3.One : Vector3.One * 0.0001f),
-                new Vector3(x - 9.5f, wet ? (float)(_grid.Ground[i] + _grid.Water[i]) : -10, z - 9.5f)));
+            if (_grid.Water[z * Size + x] <= 0.008) continue;
+            any = true;
+            Vector3 a = new(x - 10, heights[x,z], z - 10);
+            Vector3 b = new(x - 10, heights[x,z+1], z - 9);
+            Vector3 c = new(x - 9, heights[x+1,z+1], z - 9);
+            Vector3 d = new(x - 9, heights[x+1,z], z - 10);
+            surface.SetNormal(Vector3.Up);
+            surface.AddVertex(a); surface.AddVertex(b); surface.AddVertex(c);
+            surface.AddVertex(a); surface.AddVertex(c); surface.AddVertex(d);
         }
+        _waterSurface.Mesh = any ? surface.Commit() : null;
     }
 }

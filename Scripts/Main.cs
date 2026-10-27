@@ -5,7 +5,7 @@ using System.Linq;
 
 public partial class Main : Node3D
 {
-    public const string AppVersion = "0.1.6";
+    public const string AppVersion = "0.1.7";
 
     private sealed class ChunkBuildJob
     {
@@ -68,6 +68,8 @@ public partial class Main : Node3D
     private readonly Mesh[] _treeTrunkMeshes = new Mesh[4];
     private Mesh _treeLeafMesh;
     private double _hudRefreshTimer;
+    private readonly Dictionary<Vector2I, float> _waterLabGround = new();
+    private readonly HashSet<Vector2I> _waterLabChunks = new();
     private WaterSandbox _waterLab;
     private bool _debugBeforeWaterLab;
     private bool _escapeWasPressed;
@@ -331,6 +333,9 @@ public partial class Main : Node3D
         {
             _waterLab.QueueFree();
             _waterLab = null;
+            _waterLabGround.Clear();
+            RebuildWaterLabChunks();
+            _waterLabChunks.Clear();
             _player.GetNode<Camera3D>("Camera3D").Current = true;
             _player.SetPhysicsProcess(true);
             _player.SetProcessUnhandledInput(true);
@@ -353,9 +358,55 @@ public partial class Main : Node3D
         _debugBeforeWaterLab = _debugHud.Visible;
         _hud.Visible = false;
         _debugHud.Visible = false;
+        int centerX = Mathf.RoundToInt(_player.Position.X) + 12;
+        int centerZ = Mathf.RoundToInt(_player.Position.Z);
+        float baseHeight = GetHeight(centerX, centerZ);
+        // Modify the existing terrain height samples, fading to the original rim.
+        for (int z = -10; z <= 10; z++)
+        for (int x = -10; x <= 10; x++)
+        {
+            int wx = centerX + x, wz = centerZ + z;
+            float original = GetHeight(wx, wz);
+            float edge = Mathf.Max(Mathf.Abs(x), Mathf.Abs(z));
+            float blend = 1.0f - Mathf.SmoothStep(7.0f, 10.0f, edge);
+            float valley = baseHeight - 2.5f + z * z * 0.045f - x * 0.035f;
+            _waterLabGround[new Vector2I(wx, wz)] = Mathf.Lerp(original, valley, blend);
+            // Include both chunks touching a vertex, including negative coordinates.
+            for (int dz = -1; dz <= 0; dz++)
+            for (int dx = -1; dx <= 0; dx++)
+                _waterLabChunks.Add(new Vector2I(Mathf.FloorToInt((float)(wx + dx) / ChunkSize), Mathf.FloorToInt((float)(wz + dz) / ChunkSize)));
+        }
+        RebuildWaterLabChunks();
         _waterLab = new WaterSandbox { Name = "WaterLabor", OwnerWorld = this,
-            Position = new Vector3(_player.Position.X + 30, Mathf.Max(65, _player.Position.Y + 20), _player.Position.Z) };
+            Position = new Vector3(centerX, baseHeight, centerZ) };
         AddChild(_waterLab);
+    }
+
+    private void RebuildWaterLabChunks()
+    {
+        // Keep original terrain/vegetation outside the affected chunks. Rebuilding
+        // removes floating plants from the modified valley, then restores them on exit.
+        if (_chunkBuildJob != null && _waterLabChunks.Contains(_chunkBuildJob.Coordinate))
+            _chunkBuildJob = null;
+        foreach (Vector2I coordinate in _waterLabChunks)
+        {
+            if (_chunks.TryGetValue(coordinate, out Node3D old))
+            {
+                old.QueueFree();
+                _chunks.Remove(coordinate);
+                _terrainMeshes.Remove(coordinate);
+                _terrainColliders.Remove(coordinate);
+            }
+        }
+        UpdateChunkTargets(true);
+        if (_waterLabGround.Count == 0) return;
+        foreach (Vector2I coordinate in _waterLabChunks)
+        {
+            if (!_wantedChunks.Contains(coordinate)) continue;
+            Node3D chunk = BuildChunk(coordinate);
+            AddChild(chunk);
+            _chunks[coordinate] = chunk;
+        }
     }
 
     private void TogglePauseMenu()
@@ -730,6 +781,9 @@ public partial class Main : Node3D
             }
         }
 
+        if (_waterLabGround.Count > 0)
+            foreach (Vector2I coordinate in _waterLabChunks) _wantedChunks.Add(coordinate);
+
         foreach (Vector2I key in _chunks.Keys.ToArray())
         {
             if (_wantedChunks.Contains(key))
@@ -824,6 +878,9 @@ public partial class Main : Node3D
         collision.AddChild(terrainCollisionShape);
         chunk.AddChild(collision);
         _terrainColliders[coordinate] = terrainCollisionShape;
+
+        if (_waterLabGround.Count > 0 && _waterLabChunks.Contains(coordinate))
+            return chunk;
 
         // Terrain and collision become available first. Decoration follows over
         // five frames, preserving each generator's seed and random-call order.
@@ -1174,6 +1231,8 @@ public partial class Main : Node3D
 
     private float GetHeight(int worldX, int worldZ)
     {
+        if (_waterLabGround.TryGetValue(new Vector2I(worldX, worldZ), out float laboratoryHeight))
+            return laboratoryHeight;
         float noise = _terrainNoise.GetNoise2D(worldX, worldZ);
         float detail = _detailNoise.GetNoise2D(worldX, worldZ);
         float ridgeField = _mountainNoise.GetNoise2D(worldX, worldZ);

@@ -19,8 +19,8 @@ public partial class SurvivalGameplay : Node
     private GridContainer _itemGrid = null!;
     private readonly System.Collections.Generic.List<(string Kind, int Count)> _slots = new();
     private const int StackLimit = 99;
-    private static readonly string[] ItemKinds = { "wood", "sapling", "small_stone", "medium_stone", "large_stone", "stick", "dirt", "stone", "axe", "shovel", "pickaxe" };
-    private static readonly string[] ItemNames = { "Holz", "Setzling", "Kleiner Stein", "Mittlerer Stein", "Großer Stein", "Stock", "Erde", "Steinblock", "Axt", "Schaufel", "Spitzhacke" };
+    private static readonly string[] ItemKinds = { "wood", "sapling", "small_stone", "medium_stone", "large_stone", "stick", "dirt", "stone", "axe", "shovel", "pickaxe", "bowl", "jug" };
+    private static readonly string[] ItemNames = { "Holz", "Setzling", "Kleiner Stein", "Mittlerer Stein", "Großer Stein", "Stock", "Erde", "Steinblock", "Axt", "Schaufel", "Spitzhacke", "Schüssel", "Krug" };
     private ProgressBar _miningBar;
     private ulong _miningTarget;
     private static Mesh _dropStoneMesh;
@@ -398,7 +398,7 @@ public partial class SurvivalGameplay : Node
 
     private void RefreshSlots()
     {
-        int[] amounts = { _wood, _saplings, _smallStone, _mediumStone, _largeStone, _sticks, _dirt, _stoneBlocks, _hasAxe ? 1 : 0, _hasShovel ? 1 : 0, _hasPickaxe ? 1 : 0 };
+        int[] amounts = { _wood, _saplings, _smallStone, _mediumStone, _largeStone, _sticks, _dirt, _stoneBlocks, _hasAxe ? 1 : 0, _hasShovel ? 1 : 0, _hasPickaxe ? 1 : 0, 1, 1 };
         while (_slots.Count < 24) _slots.Add(("", 0));
         for (int kindIndex = 0; kindIndex < ItemKinds.Length; kindIndex++)
         {
@@ -458,7 +458,7 @@ public partial class SurvivalGameplay : Node
                 TooltipText = type < 0 ? "Leer" : ItemNames[type] + " × " + item.Count
             };
             var box = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
-            if (type >= 0)
+            if (type >= 0 && type < 11)
             {
                 string icon = item.Kind == "stone" || item.Kind == "medium_stone" ? "large_stone" : item.Kind;
                 box.AddChild(new TextureRect
@@ -470,7 +470,14 @@ public partial class SurvivalGameplay : Node
                     MouseFilter = Control.MouseFilterEnum.Ignore
                 });
             }
-            box.AddChild(new Label { Text = type < 0 ? "·" : ItemNames[type] + "\n× " + item.Count,
+            string caption = type < 0 ? "·" : ItemNames[type] + "\n× " + item.Count;
+            if (type >= 11)
+            {
+                WaterVessel vessel = WorldSave.Current.Vessels[type - 11];
+                caption = vessel.Name + $"\n{vessel.Litres:F3}/{vessel.CapacityLitres:F1} L";
+                slot.TooltipText = caption;
+            }
+            box.AddChild(new Label { Text = caption,
                 HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore });
             slot.AddChild(box);
             _itemGrid.AddChild(slot);

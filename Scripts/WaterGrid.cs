@@ -11,6 +11,20 @@ public sealed class WaterGrid
     public double DamCrest { get; set; } = 2.2;
     public double RainAdded { get; private set; }
     public double LastDamFlow { get; private set; }
+    public double Taken { get; private set; }
+    public double Returned { get; private set; }
+    public double Take(int cell, double amount)
+    {
+        if (cell < 0 || cell >= Water.Length || !double.IsFinite(amount) || amount < 0) throw new ArgumentOutOfRangeException();
+        double taken = Math.Min(Water[cell], amount);
+        Water[cell] -= taken; Taken += taken;
+        return taken;
+    }
+    public void Put(int cell, double amount)
+    {
+        if (cell < 0 || cell >= Water.Length || !double.IsFinite(amount) || amount < 0) throw new ArgumentOutOfRangeException();
+        Water[cell] += amount; Returned += amount;
+    }
     private readonly double[] _delta;
     public WaterGrid(int width, int depth)
     {

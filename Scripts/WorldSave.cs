@@ -18,6 +18,11 @@ public static class WorldSave
 
     public sealed class Data
     {
+        public List<WaterVessel> Vessels { get; set; } = new()
+        {
+            new WaterVessel { Name = "Schüssel", CapacityLitres = 2 },
+            new WaterVessel { Name = "Krug", CapacityLitres = 5 }
+        };
         public List<Drop> Drops { get; set; } = new();
         public Dictionary<string, int> Health { get; set; } = new();
         public int Format { get; set; } = 1;
@@ -59,6 +64,12 @@ public static class WorldSave
                     loaded.Growth == null || loaded.Inventory == null)
                     throw new InvalidDataException("Invalid world save.");
                 loaded.Slots ??= new List<string>();
+                loaded.Vessels ??= new Data().Vessels;
+                if (loaded.Vessels.Count < 2) loaded.Vessels = new Data().Vessels;
+                foreach (WaterVessel vessel in loaded.Vessels)
+                    if (vessel == null || !double.IsFinite(vessel.CapacityLitres) || vessel.CapacityLitres <= 0 ||
+                        !double.IsFinite(vessel.Litres) || vessel.Litres < 0 || vessel.Litres > vessel.CapacityLitres)
+                        throw new InvalidDataException("Invalid vessel contents.");
                 loaded.Drops ??= new List<Drop>();
                 loaded.Health ??= new Dictionary<string, int>();
                 Current = loaded;

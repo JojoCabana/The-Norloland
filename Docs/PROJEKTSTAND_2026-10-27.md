@@ -73,3 +73,7 @@ Erfolgreicher Build/Export bestätigt Kompilierung und Paketierung, nicht die ko
 ## Nachtrag: Wasserprototyp 0.1.6
 
 Gewünscht sind langfristig Regen, Wasseransammlung und physikalisch plausibles Fließen, aufstaubares Wasser sowie später Wasserrad und Stromerzeugung. Zunächst wurde eine kleine Variante beauftragt, ergänzt um weichere Wasseroptik und Lens Flare. Auf ausdrücklichen Wunsch wird keine eigene Szene geladen: F7 erzeugt ein temporäres Wasserlabor in der bestehenden Spielwelt. Details und Grenzen: [WASSERLABOR.md](WASSERLABOR.md). Der ausführbare Stand ist jetzt 0.1.6; die zuvor beschriebene Übergabe 0.1.5 bleibt als Verlauf erhalten.
+
+## Korrektur und Gefäße: 0.1.7
+
+Das erste Rendering wurde zu Recht als schwebendes Gefäß wahrgenommen. Der beauftragte natürliche Bereich wird nun durch temporäre Änderung des vorhandenen Geländes umgesetzt; die alte Box-Geometrie entfällt. Wasser erhält eine gemeinsame Oberfläche und schwächeren Glanz. Zusätzlich: Wasser in Schüsseln/Gefäße abfüllen, mit tatsächlicher Mengenentnahme und Rückgabe beim Ausgießen. Zwei Startgefäße dienen als Prototyp; Details und verbleibende Grenzen stehen in WASSERLABOR.md.
