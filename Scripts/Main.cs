@@ -5,7 +5,7 @@ using System.Linq;
 
 public partial class Main : Node3D
 {
-    public const string AppVersion = "0.2.2";
+    public const string AppVersion = "0.2.3";
 
     private sealed class ChunkBuildJob
     {
@@ -88,6 +88,11 @@ public partial class Main : Node3D
         AddInputAction("jump", Key.Space);
         AddInputAction("pause_menu", Key.Escape);
 
+        if (OS.GetCmdlineUserArgs().Contains("--snow-capture")) {
+            WorldSeed = 741932; AutoScaleViewDistance = false; ViewDistance = 1;
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            DisplayServer.WindowSetSize(new Vector2I(1280, 720));
+        }
         if(OS.GetCmdlineUserArgs().Contains("--landscape-demo")) {
             WorldSeed=741932;AutoScaleViewDistance=false;
             DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
@@ -97,7 +102,7 @@ public partial class Main : Node3D
         }
         WorldSeed = WorldSave.Load(WorldSeed);
         EvaporationMillimetresPerHour = WorldSave.Current.EvaporationMillimetresPerHour;
-        _climate = new WorldClimate(WorldSave.Current.ClimateDay);
+        _climate = new WorldClimate(OS.GetCmdlineUserArgs().Contains("--snow-capture") ? 88.5 : WorldSave.Current.ClimateDay);
         RestoreTerrainChanges();
 
         _terrainNoise = new FastNoiseLite
@@ -205,6 +210,11 @@ public partial class Main : Node3D
         _flowerPetalMesh = CreateFlowerPetalMesh();
 
         InitializeNature();
+        if (OS.GetCmdlineUserArgs().Contains("--snow-capture")) {
+            WorldSeed = 741932; AutoScaleViewDistance = false; ViewDistance = 1;
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            DisplayServer.WindowSetSize(new Vector2I(1280, 720));
+        }
         if(OS.GetCmdlineUserArgs().Contains("--landscape-demo"))GD.Print("LANDSCAPE_MODELS_LOADED");
         CreateLighting();
         CreatePlayer();
@@ -260,6 +270,7 @@ public partial class Main : Node3D
         }
 
         TickLandscapeDemo(delta);
+        TickSnowCapture();
 
         // Text layout and terrain diagnostics need not run at render frequency.
         _hudRefreshTimer -= delta;
@@ -272,7 +283,7 @@ public partial class Main : Node3D
             _hud.Text = "THE NORLOLAND v" + AppVersion + "  |  Seed: " + WorldSeed +
                         "  |  Chunks: " + _chunks.Count +
                         (WorldSave.Failed || WorldSave.WriteFailed ? "  |  SPEICHERFEHLER" : "  |  Autosave") +
-                        "  |  WASD/Space  |  E Sammeln  |  Linksklick Abbau  |  I Inventar  |  1–4 Werkzeuge  |  F3 Debug  |  R Regen im Zielchunk  |  V Gefäß · B füllen · P ausgießen  |  Esc Menü";
+                        "  |  WASD/Space  |  E Sammeln  |  Linksklick Abbau  |  I Inventar  |  1–4 Werkzeuge  |  F3 Debug  |  R Niederschlag im Zielchunk  |  V Gefäß · B füllen · P ausgießen  |  Esc Menü";
         }
 
         if (_debugHud != null && _debugHud.Visible)
@@ -454,6 +465,11 @@ public partial class Main : Node3D
             Position = new Vector3(0, 55, 0)
         };
         AddChild(_player);
+        if (OS.GetCmdlineUserArgs().Contains("--snow-capture")) {
+            WorldSeed = 741932; AutoScaleViewDistance = false; ViewDistance = 1;
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            DisplayServer.WindowSetSize(new Vector2I(1280, 720));
+        }
         if(OS.GetCmdlineUserArgs().Contains("--landscape-demo"))_player.SetPhysicsProcess(false);
         _player.GetNode<Camera3D>("Camera3D").Far = ChunkSize * (ViewDistance + 1.0f);
     }

@@ -95,5 +95,35 @@ static class Checks
         cloud.Put(0, 0, 1); cloud.Put(8, 0, 1); cloud.SetRain(0, 0, true); cloud.Step(.05, 0, .01);
         Check(cloud.Depth(0, 0) > cloud.Depth(8, 0), "Local rainy cloud reduces evaporation only in selected chunk");
         Console.WriteLine("PASS: four seasons, year wrap, temperature/sun evaporation, rainy cloud, manual season choice and saved clock.");
+        Near(SnowClimate.SnowFraction(-5), 1, 0, "Snow below freezing");
+        Near(SnowClimate.SnowFraction(0), 1, 0, "Snow at freezing");
+        Near(SnowClimate.SnowFraction(1), .5, 0, "Mixed precipitation between zero and two");
+        Near(SnowClimate.SnowFraction(2), 0, 0, "Rain from two degrees");
+        var snow = new WorldWaterGrid(4, (x,z) => x >= 4 ? -2 : 0);
+        snow.SetRain(0,0,true); snow.Step(.05,.01,0,-5,0);
+        Near(snow.SnowVolume,16*.05*.01,1e-14,"Cold precipitation stored as water-equivalent snow");
+        Near(snow.Volume,0,0,"Snowfall does not also create liquid water");
+        snow.SetRain(0,0,false); double snowBefore=snow.SnowVolume;
+        snow.Step(.05,0,0,-2,1,72);
+        Near(snow.SnowVolume,snowBefore,0,"Cold snow persists when precipitation stops");
+        double shaded=SnowClimate.MeltDepth(5,0,3600), sunny=SnowClimate.MeltDepth(5,1,3600);
+        Check(sunny>shaded && SnowClimate.MeltDepth(10,1,3600)>sunny,"Warmth and sun accelerate melting");
+        snow.Step(.05,0,0,10,1,7200);
+        Check(snow.Volume>0 && snow.SnowVolume<snowBefore,"Positive temperature creates meltwater");
+        Near(snow.Volume+snow.SnowVolume,snowBefore,1e-12,"Snow melt conserves water exactly");
+        Check(snow.Depth(4,0)>0,"Meltwater crosses a chunk boundary immediately");
+        var mixed=new WorldWaterGrid(4,(x,z)=>0);mixed.SetRain(-1,-1,true);mixed.Step(.05,.01,0,1,0);
+        Check(mixed.Volume>0 && mixed.SnowVolume>0,"Mixed rain/snow both reach the world");
+        Near(mixed.Volume+mixed.SnowVolume,mixed.RainAdded,1e-12,"Mixed precipitation total mass balance");
+        var snowSnapshot=snow.SnowCells.ToDictionary(c=>$"{c.Key.X},{c.Key.Z}",c=>c.Value);
+        var restoredSnow=new WorldWaterGrid(4,(x,z)=>0);
+        foreach(var entry in JsonSerializer.Deserialize<Dictionary<string,double>>(JsonSerializer.Serialize(snowSnapshot))!)
+        {var p=entry.Key.Split(',');restoredSnow.PutSnow(int.Parse(p[0]),int.Parse(p[1]),entry.Value);}
+        Near(restoredSnow.SnowVolume,snow.SnowVolume,1e-12,"Snow save roundtrip");
+        Near(restoredSnow.SnowCornerDepth(4,0),snow.SnowCornerDepth(4,0),1e-12,"Shared snow cover at chunk boundary");
+        var thaw=new WorldWaterGrid(4,(x,z)=>0);thaw.PutSnow(0,0,.000001);thaw.Step(.05,0,0,30,1,100000);
+        Near(thaw.SnowVolume,0,0,"Complete thaw removes snow entries");
+        Near(thaw.Volume,.000001,1e-14,"Complete thaw returns all stored mass");
+        Console.WriteLine("PASS: snow/rain thresholds, persistence, sun/warmth melt, cross-chunk runoff, mixed precipitation, snow save and full thaw mass balance.");
     }
 }

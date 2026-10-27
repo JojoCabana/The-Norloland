@@ -25,6 +25,7 @@ public static class WorldSave
         };
         public double ClimateDay { get; set; } = 56.5;
         public float EvaporationMillimetresPerHour { get; set; } = 0.5f;
+        public Dictionary<string, double> WorldSnow { get; set; } = new();
         public Dictionary<string, double> WorldWater { get; set; } = new();
         public HashSet<string> RainChunks { get; set; } = new();
         public List<Drop> Drops { get; set; } = new();
@@ -74,6 +75,7 @@ public static class WorldSave
                     throw new InvalidDataException("Invalid climate clock.");
                 if (!float.IsFinite(loaded.EvaporationMillimetresPerHour) || loaded.EvaporationMillimetresPerHour < 0 || loaded.EvaporationMillimetresPerHour > 5)
                     throw new InvalidDataException("Invalid evaporation rate.");
+                loaded.WorldSnow ??= new();
                 loaded.WorldWater ??= new();
                 loaded.RainChunks ??= new();
                 static bool ValidCell(string key)
@@ -82,6 +84,9 @@ public static class WorldSave
                     return parts.Length == 2 && int.TryParse(parts[0], out int x) && int.TryParse(parts[1], out int z)
                         && Math.Abs((long)x) < 100000000 && Math.Abs((long)z) < 100000000;
                 }
+                foreach (var cell in loaded.WorldSnow)
+                    if (!ValidCell(cell.Key) || !double.IsFinite(cell.Value) || cell.Value < 0)
+                        throw new InvalidDataException("Invalid world snow.");
                 foreach (var cell in loaded.WorldWater)
                     if (!ValidCell(cell.Key) || !double.IsFinite(cell.Value) || cell.Value < 0)
                         throw new InvalidDataException("Invalid world water.");

@@ -11,6 +11,10 @@ public partial class WorldWater : Node3D
     private VolumeTerrain _terrain;
     private readonly Dictionary<Vector2I, MeshInstance3D> _meshes = new();
     private readonly Dictionary<Vector2I, CpuParticles3D> _rain = new();
+    private readonly Dictionary<Vector2I, CpuParticles3D> _snowflakes = new();
+    private readonly Dictionary<Vector2I, ImageTexture> _snowMaps = new();
+    private StandardMaterial3D _crystalMaterial;
+    private readonly HashSet<Vector2I> _snowOnTerrain = new();
     private readonly Dictionary<(int, int), float> _groundVertices = new();
     private readonly Dictionary<(int, int), float> _levels = new();
     private ShaderMaterial _material;
@@ -33,8 +37,12 @@ public partial class WorldWater : Node3D
         {
             if (ParseCell(entry.Key, out int x, out int z)) _grid.Put(x, z, entry.Value);
         }
+        foreach (var entry in WorldSave.Current.WorldSnow)
+            if (ParseCell(entry.Key, out int x, out int z)) _grid.PutSnow(x, z, entry.Value);
+        _crystalMaterial = CreateCrystalMaterial();
         foreach (string entry in WorldSave.Current.RainChunks)
             if (ParseCell(entry, out int x, out int z)) _grid.SetRain(x, z, true);
+        if (Array.IndexOf(OS.GetCmdlineUserArgs(), "--snow-capture") >= 0) _grid.SetRain(0, 0, true);
         _material = new ShaderMaterial { Shader = GD.Load<Shader>("res://Shaders/world_water.gdshader") };
         _outline = new Node3D { Name = "RainTargetChunk", Visible = false }; AddChild(_outline);
         var border = new StandardMaterial3D { AlbedoColor = new Color(1, .75f, .15f),
@@ -108,7 +116,7 @@ public partial class WorldWater : Node3D
             if (code == Key.R)
             {
                 bool on = !_grid.IsRaining(cx, cz); _grid.SetRain(cx, cz, on);
-                _message = $"Regen in Chunk {cx},{cz}: {(on ? "AN" : "AUS")}";
+                _message = $"Niederschlag in Chunk {cx},{cz}: {(on ? "AN" : "AUS")}";
             }
             else if (code == Key.B)
             {
@@ -130,7 +138,7 @@ public partial class WorldWater : Node3D
         bool playing = Input.MouseMode == Input.MouseModeEnum.Captured;
         _outline.Visible = playing && _target.HasValue; _label.Visible = playing;
         _accumulator = Math.Min(_accumulator + delta, Tick * 4);
-        while (_accumulator >= Tick) { _grid.Step(Tick, RainRate, OwnerWorld.WaterEvaporationMetresPerSecond); _accumulator -= Tick; }
+        while (_accumulator >= Tick) { _grid.Step(Tick, RainRate, OwnerWorld.WaterEvaporationMetresPerSecond, OwnerWorld.WaterTemperatureCelsius, OwnerWorld.WaterSunlight, WorldClimate.ClockScale); _accumulator -= Tick; }
         _refreshTimer -= delta; if (_refreshTimer > 0) return; _refreshTimer = .1;
         _target = null;
         if (playing && Aim(out Vector3 point))
@@ -139,9 +147,9 @@ public partial class WorldWater : Node3D
                 WorldWaterGrid.ChunkOf(Mathf.FloorToInt(point.Z), OwnerWorld.ChunkSize));
             _outline.Position = new Vector3(_target.Value.X * OwnerWorld.ChunkSize, point.Y + .08f, _target.Value.Y * OwnerWorld.ChunkSize);
         }
-        string target = _target.HasValue ? $"Chunk {_target.Value.X},{_target.Value.Y} · Regen {(_grid.IsRaining(_target.Value.X, _target.Value.Y) ? "AN" : "AUS")}" : "Auf Boden zielen";
+        string target = _target.HasValue ? $"Chunk {_target.Value.X},{_target.Value.Y} · Niederschlag {(_grid.IsRaining(_target.Value.X, _target.Value.Y) ? "AN" : "AUS")}" : "Auf Boden zielen";
         WaterVessel vessel = WorldSave.Current.Vessels[_vessel];
-        _label.Text = $"R · {target} (beschleunigter Regen: 10 mm/s)\nV · {vessel.Name} {vessel.Litres:F2}/{vessel.CapacityLitres:F1} L · B füllen · P ausgießen\n{OwnerWorld.ClimateDescription}\nVerdunstung aktuell: {OwnerWorld.WaterEvaporationMetresPerSecond / WorldClimate.ClockScale * 3600000:F2} mm/Spielstunde (bei Regen ×0,35) · {_message}";
+        _label.Text = $"R · {target} (Niederschlag beschleunigt: 10 mm/s Wasseräquivalent)\nV · {vessel.Name} {vessel.Litres:F2}/{vessel.CapacityLitres:F1} L · B füllen · P ausgießen\n{OwnerWorld.ClimateDescription}\nVerdunstung aktuell: {OwnerWorld.WaterEvaporationMetresPerSecond / WorldClimate.ClockScale * 3600000:F2} mm/Spielstunde (bei Regen ×0,35) · {_message}";
         RefreshVisuals();
     }
     private void RefreshVisuals()
@@ -168,24 +176,122 @@ public partial class WorldWater : Node3D
             }
             BuildSurface(visual, group.Value);
         }
+        RefreshSnowCover(loaded);
+        RefreshPrecipitation(loaded);
+    }
+    private void RefreshSnowCover(HashSet<Vector2I> loaded)
+    {
+        int size = OwnerWorld.ChunkSize;
+        var snowy = new HashSet<Vector2I>();
+        foreach (var cell in _grid.SnowCells)
+        {
+            var chunk = new Vector2I(WorldWaterGrid.ChunkOf(cell.Key.X, size), WorldWaterGrid.ChunkOf(cell.Key.Z, size));
+            // Border vertices sample neighboring cells too. Include touching neighbors
+            // so shader filtering and cover are identical on both sides of a seam.
+            for (int dz = -1; dz <= 1; dz++) for (int dx = -1; dx <= 1; dx++)
+            {
+                var neighbor = chunk + new Vector2I(dx, dz);
+                if (loaded.Contains(neighbor)) snowy.Add(neighbor);
+            }
+        }
+        foreach (var old in _snowOnTerrain.ToArray())
+            if (!snowy.Contains(old))
+            {
+                OwnerWorld.SetTerrainSnow(old, null); _snowOnTerrain.Remove(old);
+                if (_snowMaps.Remove(old, out var texture)) texture.Dispose();
+            }
+        foreach (var chunk in snowy)
+        {
+            using var image = Image.CreateEmpty(size + 1, size + 1, false, Image.Format.Rf);
+            for (int z = 0; z <= size; z++) for (int x = 0; x <= size; x++)
+                image.SetPixel(x, z, new Color((float)_grid.SnowCornerDepth(chunk.X * size + x, chunk.Y * size + z), 0, 0));
+            if (!_snowMaps.TryGetValue(chunk, out var texture))
+                _snowMaps[chunk] = texture = ImageTexture.CreateFromImage(image);
+            else texture.Update(image);
+            OwnerWorld.SetTerrainSnow(chunk, texture); _snowOnTerrain.Add(chunk);
+        }
+    }
+    private void RefreshPrecipitation(HashSet<Vector2I> loaded)
+    {
         var raining = new HashSet<Vector2I>(_grid.RainChunks.Select(c => new Vector2I(c.X, c.Z)));
-        foreach (var old in _rain.Keys.ToArray())
-            if (!raining.Contains(old) || !loaded.Contains(old)) { _rain[old].QueueFree(); _rain.Remove(old); }
+        void RemoveUnused(Dictionary<Vector2I, CpuParticles3D> particles)
+        {
+            foreach (var old in particles.Keys.ToArray())
+                if (!raining.Contains(old) || !loaded.Contains(old)) { particles[old].QueueFree(); particles.Remove(old); }
+        }
+        RemoveUnused(_rain); RemoveUnused(_snowflakes);
+        float snowFraction = (float)SnowClimate.SnowFraction(OwnerWorld.WaterTemperatureCelsius);
         foreach (Vector2I chunk in raining)
         {
-            if (!loaded.Contains(chunk) || _rain.ContainsKey(chunk)) continue;
+            if (!loaded.Contains(chunk)) continue;
             float top = float.NegativeInfinity;
             int size = OwnerWorld.ChunkSize;
             for (int z = 0; z <= size; z += 2) for (int x = 0; x <= size; x += 2)
                 top = Math.Max(top, _terrain.Height(chunk.X * size + x, chunk.Y * size + z));
-            var drops = new CpuParticles3D { Amount = 512, Lifetime = 1.5, Emitting = true,
-                EmissionShape = CpuParticles3D.EmissionShapeEnum.Box, EmissionBoxExtents = new Vector3(size * .5f, .1f, size * .5f),
-                Direction = Vector3.Down, Spread = 0, InitialVelocityMin = 12, InitialVelocityMax = 14,
-                Gravity = new Vector3(0, -6, 0), Color = new Color(.6f, .8f, 1, .65f),
-                Mesh = new BoxMesh { Size = new Vector3(.015f, .2f, .015f) },
-                Position = new Vector3((chunk.X + .5f) * size, top + 8, (chunk.Y + .5f) * size) };
-            AddChild(drops); _rain[chunk] = drops;
+            if (!_rain.TryGetValue(chunk, out var drops))
+            {
+                drops = new CpuParticles3D { Amount = 512, Lifetime = 1.5, Emitting = true,
+                    EmissionShape = CpuParticles3D.EmissionShapeEnum.Box, EmissionBoxExtents = new Vector3(size * .5f, .1f, size * .5f),
+                    Direction = Vector3.Down, Spread = 0, InitialVelocityMin = 12, InitialVelocityMax = 14,
+                    Gravity = new Vector3(0, -6, 0), Color = new Color(.6f, .8f, 1, .65f),
+                    Mesh = new BoxMesh { Size = new Vector3(.015f, .2f, .015f) } };
+                AddChild(drops); _rain[chunk] = drops;
+            }
+            drops.Emitting = snowFraction < 1;
+            int dropCount = Math.Max(1, (int)(512 * (1 - snowFraction)));
+            if (drops.Amount != dropCount) drops.Amount = dropCount;
+            drops.Position = new Vector3((chunk.X + .5f) * size, top + 8, (chunk.Y + .5f) * size);
+            if (!_snowflakes.TryGetValue(chunk, out var flakes))
+            {
+                flakes = new CpuParticles3D { Amount = 320, Lifetime = 12, Emitting = false, Preprocess = 6,
+                    EmissionShape = CpuParticles3D.EmissionShapeEnum.Box, EmissionBoxExtents = new Vector3(size * .5f, 2, size * .5f),
+                    Direction = new Vector3(.12f, -1, .06f), Spread = 15,
+                    InitialVelocityMin = .6f, InitialVelocityMax = 1.1f, Gravity = new Vector3(0, -.04f, 0),
+                    AngleMin = 0, AngleMax = 360, AngularVelocityMin = -25, AngularVelocityMax = 25,
+                    ScaleAmountMin = .6f, ScaleAmountMax = 1.4f,
+                    Mesh = new QuadMesh { Size = new Vector2(.09f, .09f), Material = _crystalMaterial } };
+                AddChild(flakes); _snowflakes[chunk] = flakes;
+            }
+            flakes.Emitting = snowFraction > 0;
+            int flakeCount = Math.Max(1, (int)(320 * snowFraction));
+            if (flakes.Amount != flakeCount) flakes.Amount = flakeCount;
+            flakes.Position = new Vector3((chunk.X + .5f) * size, top + 7, (chunk.Y + .5f) * size);
         }
+    }
+    private static StandardMaterial3D CreateCrystalMaterial()
+    {
+        const int size = 64;
+        using var image = Image.CreateEmpty(size, size, false, Image.Format.Rgba8);
+        image.Fill(new Color(1, 1, 1, 0));
+        void Line(Vector2 a, Vector2 b, float width)
+        {
+            for (int y = 0; y < size; y++) for (int x = 0; x < size; x++)
+            {
+                Vector2 p = new(x + .5f, y + .5f), ab = b - a;
+                float t = Mathf.Clamp((p - a).Dot(ab) / Math.Max(ab.LengthSquared(), .001f), 0, 1);
+                float opacity = Mathf.Clamp(width + .7f - p.DistanceTo(a + ab * t), 0, 1);
+                if (opacity > image.GetPixel(x, y).A) image.SetPixel(x, y, new Color(.93f, .97f, 1, opacity));
+            }
+        }
+        Vector2 center = new(size * .5f, size * .5f);
+        for (int arm = 0; arm < 6; arm++)
+        {
+            float angle = arm * Mathf.Tau / 6;
+            Vector2 direction = new(Mathf.Cos(angle), Mathf.Sin(angle));
+            Line(center, center + direction * 28, 1.1f);
+            foreach (float distance in new[] { 12f, 20f })
+            foreach (float side in new[] { -1f, 1f })
+            {
+                float branchAngle = angle + side * Mathf.Pi / 3;
+                Vector2 start = center + direction * distance;
+                Line(start, start + new Vector2(Mathf.Cos(branchAngle), Mathf.Sin(branchAngle)) * 8, .8f);
+            }
+        }
+        return new StandardMaterial3D { AlbedoTexture = ImageTexture.CreateFromImage(image),
+            Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor, AlphaScissorThreshold = .2f,
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            BillboardMode = BaseMaterial3D.BillboardModeEnum.Enabled,
+            CullMode = BaseMaterial3D.CullModeEnum.Disabled };
     }
     private void BuildSurface(MeshInstance3D visual, List<(int X, int Z)> cells)
     {
@@ -221,8 +327,13 @@ public partial class WorldWater : Node3D
         }
         Mesh old = visual.Mesh; visual.Mesh = any ? surface.Commit() : null; old?.Dispose();
     }
+    public override void _ExitTree()
+    {
+        foreach (var pair in _snowMaps) { OwnerWorld.SetTerrainSnow(pair.Key, null); pair.Value.Dispose(); }
+    }
     public void SaveTo(WorldSave.Data data)
     {
+        data.WorldSnow.Clear(); foreach (var cell in _grid.SnowCells) data.WorldSnow[$"{cell.Key.X},{cell.Key.Z}"] = cell.Value;
         data.WorldWater.Clear(); foreach (var cell in _grid.Cells) data.WorldWater[$"{cell.Key.X},{cell.Key.Z}"] = cell.Value;
         data.RainChunks.Clear(); foreach (var chunk in _grid.RainChunks) data.RainChunks.Add($"{chunk.X},{chunk.Z}");
     }

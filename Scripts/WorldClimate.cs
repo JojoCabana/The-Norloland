@@ -27,8 +27,8 @@ public sealed class WorldClimate
             return progress <= 0 || progress >= 1 ? 0 : Math.Sin(progress * Math.PI);
         }
     }
-    public double TemperatureCelsius => (CurrentSeason switch { Season.Spring => 12, Season.Summer => 24, Season.Autumn => 10, _ => 0 })
-        + 4 * Math.Cos((Hour - 14) / 24 * Math.PI * 2);
+    public double TemperatureCelsius => (CurrentSeason switch { Season.Spring => 12, Season.Summer => 24, Season.Autumn => 10, _ => -2 })
+        + 4 * Math.Cos((Hour - 14) / 24 * Math.PI * 2) + 3 * Math.Sin(Day * .41);
     // A configurable reference evaporation is multiplied by warmth and sun.
     // Cold nights reduce evaporation; freezing, ice and sublimation are separate systems.
     public double EvaporationFactor => Math.Clamp((TemperatureCelsius + 5) / 25, 0, 1.8) * (.2 + .8 * Sunlight);

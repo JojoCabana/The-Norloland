@@ -10,6 +10,9 @@ public sealed class WorldWaterGrid
     private readonly Func<int, int, double> _sampleGround;
     private readonly Dictionary<(int X, int Z), double> _ground = new();
     private readonly Dictionary<(int X, int Z), double> _water = new();
+    private readonly Dictionary<(int X, int Z), double> _snow = new();
+    private readonly List<(int X, int Z)> _snowSources = new();
+    public IReadOnlyDictionary<(int X, int Z), double> SnowCells => _snow;
     private readonly Dictionary<(int X, int Z), double> _delta = new();
     private readonly List<(int X, int Z)> _sources = new();
     private readonly HashSet<(int X, int Z)> _rainChunks = new();
@@ -18,6 +21,8 @@ public sealed class WorldWaterGrid
     public int ChunkSize { get; }
     public double RainAdded { get; private set; }
     public double Evaporated { get; private set; }
+    public double Melted { get; private set; }
+    public double SnowVolume { get { double sum = 0; foreach (double value in _snow.Values) sum += value; return sum; } }
     public WorldWaterGrid(int chunkSize, Func<int, int, double> sampleGround)
     {
         if (chunkSize < 1) throw new ArgumentOutOfRangeException(nameof(chunkSize));
@@ -46,6 +51,18 @@ public sealed class WorldWaterGrid
         if (!double.IsFinite(cubicMetres) || cubicMetres < 0) throw new ArgumentOutOfRangeException(nameof(cubicMetres));
         if (cubicMetres > 0) _water[(x, z)] = Depth(x, z) + cubicMetres;
     }
+    public double SnowWaterEquivalent(int x, int z) => _snow.TryGetValue((x, z), out double value) ? value : 0;
+    public void PutSnow(int x, int z, double waterEquivalent)
+    {
+        if (!double.IsFinite(waterEquivalent) || waterEquivalent < 0) throw new ArgumentOutOfRangeException(nameof(waterEquivalent));
+        if (waterEquivalent > 0) _snow[(x, z)] = SnowWaterEquivalent(x, z) + waterEquivalent;
+    }
+    public double SnowCornerDepth(int x, int z)
+    {
+        double sum = 0;
+        for (int dz = -1; dz <= 0; dz++) for (int dx = -1; dx <= 0; dx++) sum += SnowWaterEquivalent(x + dx, z + dz);
+        return sum * .25 * SnowClimate.DepthRatio;
+    }
     public double Take(int x, int z, double cubicMetres)
     {
         if (!double.IsFinite(cubicMetres) || cubicMetres < 0) throw new ArgumentOutOfRangeException(nameof(cubicMetres));
@@ -55,15 +72,23 @@ public sealed class WorldWaterGrid
         return taken;
     }
     public double Volume { get { double sum = 0; foreach (double value in _water.Values) sum += value; return sum; } }
-    public void Step(double dt, double rainRate, double evaporationMetresPerSecond = 0)
+    public void Step(double dt, double rainRate, double evaporationMetresPerSecond = 0, double temperatureCelsius = 10, double sunlight = 0, double climateTimeScale = 1)
     {
         if (!double.IsFinite(dt) || dt <= 0 || dt > 0.1 || !double.IsFinite(rainRate) || rainRate < 0 || !double.IsFinite(evaporationMetresPerSecond) || evaporationMetresPerSecond < 0)
             throw new ArgumentOutOfRangeException();
+        if (!double.IsFinite(temperatureCelsius) || !double.IsFinite(sunlight) || !double.IsFinite(climateTimeScale) || climateTimeScale < 0)
+            throw new ArgumentOutOfRangeException();
+        double snowFraction = SnowClimate.SnowFraction(temperatureCelsius);
         foreach (var chunk in _rainChunks)
         for (int z = 0; z < ChunkSize; z++)
         for (int x = 0; x < ChunkSize; x++)
-            Put(chunk.X * ChunkSize + x, chunk.Z * ChunkSize + z, rainRate * dt);
+        {
+            int wx = chunk.X * ChunkSize + x, wz = chunk.Z * ChunkSize + z;
+            Put(wx, wz, rainRate * dt * (1 - snowFraction));
+            PutSnow(wx, wz, rainRate * dt * snowFraction);
+        }
         RainAdded += _rainChunks.Count * (double)ChunkSize * ChunkSize * rainRate * dt;
+        MeltSnow(SnowClimate.MeltDepth(temperatureCelsius, sunlight, dt * climateTimeScale));
         _sources.Clear();
         foreach (var cell in _water) if (cell.Value > FlowDepth) _sources.Add(cell.Key);
         _delta.Clear();
@@ -82,6 +107,18 @@ public sealed class WorldWaterGrid
             if (remaining == 0) _water.Remove(change.Key); else _water[change.Key] = remaining;
         }
         Evaporate(evaporationMetresPerSecond * dt);
+    }
+    private void MeltSnow(double depth)
+    {
+        if (depth <= 0) return;
+        _snowSources.Clear(); _snowSources.AddRange(_snow.Keys);
+        foreach (var cell in _snowSources)
+        {
+            double amount = Math.Min(_snow[cell], depth);
+            double remaining = _snow[cell] - amount;
+            if (remaining == 0) _snow.Remove(cell); else _snow[cell] = remaining;
+            Put(cell.X, cell.Z, amount); Melted += amount;
+        }
     }
     private void Evaporate(double depth)
     {

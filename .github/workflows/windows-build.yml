@@ -62,6 +62,21 @@ jobs:
           timeout 120s godot --headless --path . --quit-after 20 2>&1 | tee world-startup.log
           ! grep -E 'SCRIPT ERROR|error CS[0-9]+|Unhandled exception' world-startup.log
 
+      - name: Render snow in the normal world
+        run: |
+          set -o pipefail
+          timeout 300s xvfb-run -a godot --path . --rendering-method gl_compatibility --fixed-fps 30 -- --snow-capture 2>&1 | tee snow-capture.log
+          ! grep -E 'SCRIPT ERROR|Shader compilation failed|error CS[0-9]+|Unhandled exception' snow-capture.log
+          test -f build/snow-world.png
+
+      - name: Upload snow world capture
+        uses: actions/upload-artifact@v4
+        with:
+          name: Snow-World-Preview
+          path: build/snow-world.png
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Export Windows build
         run: |
           mkdir -p build

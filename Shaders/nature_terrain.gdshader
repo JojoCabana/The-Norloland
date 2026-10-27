@@ -10,6 +10,10 @@ uniform sampler2D sand_rough : filter_linear_mipmap, repeat_enable;
 uniform sampler2D soil_color : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D soil_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D soil_rough : filter_linear_mipmap, repeat_enable;
+uniform sampler2D snow_map : filter_linear, repeat_disable;
+uniform vec2 snow_origin = vec2(0.0);
+uniform float snow_size = 16.0;
+uniform bool snow_enabled = false;
 varying vec3 world_pos;
 varying vec3 world_normal;
 
@@ -71,5 +75,14 @@ void fragment() {
 	detail = normalize(mix(detail,tri_normal(sand_normal,p,w,n),sand));
 	NORMAL = normalize((VIEW_MATRIX*vec4(normalize(mix(n,detail,mix(0.32,0.16,COLOR.a))),0.0)).xyz);
 	ROUGHNESS = clamp(mix(mix(tri_rough(grass_rough,p,w),tri_rough(soil_rough,p*0.8,w),soil),tri_rough(sand_rough,p,w),sand),0.65,1.0);
+	if (snow_enabled) {
+		vec2 snow_uv = (world_pos.xz - snow_origin + vec2(0.5)) / (snow_size + 1.0);
+		float snow_depth = texture(snow_map, snow_uv).r;
+		float cover = smoothstep(0.0, 0.025, snow_depth) * smoothstep(0.05, 0.65, n.y);
+		float grain = sin(world_pos.x*42.0+sin(world_pos.z*39.0))*0.015;
+		ALBEDO = mix(ALBEDO, vec3(0.88,0.92,0.96)+grain, cover);
+		NORMAL = normalize(mix(NORMAL, (VIEW_MATRIX*vec4(n,0.0)).xyz, cover*0.85));
+		ROUGHNESS = mix(ROUGHNESS,0.92,cover);
+	}
 	SPECULAR = 0.12;
 }
