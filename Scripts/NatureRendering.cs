@@ -9,6 +9,8 @@ public partial class Main
     private readonly List<Mesh> _natureTall=new();
     private void InitializeNature()
     {
+        if(System.Array.IndexOf(OS.GetCmdlineUserArgs(),"--water-preview")>=0) { _volumeMaterial=_terrainMaterial;return; }
+        GetViewport().MeshLodThreshold=3.0f;
         var terrain=new ShaderMaterial {Shader=GD.Load<Shader>("res://Shaders/nature_terrain.gdshader")};
         foreach(var entry in new[]{("grass","leafy_grass"),("sand","sand_01"),("soil","forest_ground_04")})
         foreach(var map in new[]{("color","Diffuse"),("normal","nor_gl"),("rough","Rough")})

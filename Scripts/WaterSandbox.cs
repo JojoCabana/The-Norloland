@@ -145,7 +145,7 @@ public partial class WaterSandbox : Node3D
     }
     public override void _Process(double delta)
     {
-        if (_capturePreview && ++_previewFrames == 180)
+        if (_capturePreview && ++_previewFrames == 30)
         {
             string path = ProjectSettings.GlobalizePath("res://build/water-preview.png");
             var error = GetViewport().GetTexture().GetImage().SavePng(path);

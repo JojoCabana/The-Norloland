@@ -53,7 +53,7 @@ jobs:
       - name: Render water preview
         run: |
           mkdir -p build
-          timeout 90s xvfb-run -a godot --path . --rendering-method gl_compatibility -- --water-preview
+          timeout 180s xvfb-run -a godot --path . --rendering-method gl_compatibility -- --water-preview
 
       - name: Upload water preview
         uses: actions/upload-artifact@v4

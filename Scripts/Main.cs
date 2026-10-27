@@ -902,9 +902,9 @@ public partial class Main : Node3D
         chunk.AddChild(collision);
         _terrainColliders[coordinate] = terrainCollisionShape;
         _volumeReady.Remove(coordinate);
-        _volumeDirty.Add(coordinate);
+        if(!OS.GetCmdlineUserArgs().Contains("--water-preview"))_volumeDirty.Add(coordinate);
 
-        if (_waterLabGround.Count > 0 && _waterLabChunks.Contains(coordinate))
+        if (OS.GetCmdlineUserArgs().Contains("--water-preview") || (_waterLabGround.Count > 0 && _waterLabChunks.Contains(coordinate)))
             return chunk;
 
         // Terrain and collision become available first. Decoration follows over
@@ -1307,7 +1307,7 @@ public partial class Main : Node3D
             float heightScale = 0.90f + (float)random.NextDouble() * 0.20f;
             float actualTrunkHeight = trunkHeight * matureScale * heightScale;
             int species=treeType==1?1:0;
-            float assetScale=species==1?0.85f:1.0f;
+            float assetScale=actualTrunkHeight/(species==1?18.8f:19.3f);
             natureTransforms[species].Add(new Transform3D(Basis.FromEuler(new Vector3(0,(float)(attempt*2.399963),0)).Scaled(Vector3.One*assetScale),new Vector3(px,SampleTerrainHeight(heights,px,pz),pz)));
             float trunkThickness = 0.92f + matureScale * 0.26f;
             float leanX = ((float)random.NextDouble() - 0.5f) * 0.08f;
