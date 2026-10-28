@@ -19,6 +19,9 @@ func _ready() -> void:
 func _height(dir: Vector3) -> float:
     return RADIUS + terrain_noise.get_noise_3dv(dir * RADIUS) * 1.8 + detail_noise.get_noise_3dv(dir * RADIUS) * 0.3
 
+func surface_radius(dir: Vector3) -> float:
+    return _height(dir.normalized())
+
 func _color(dir: Vector3, elevation: float) -> Color:
     var latitude := absf(dir.y)
     if latitude > 0.76:
