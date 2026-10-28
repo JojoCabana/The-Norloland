@@ -1,6 +1,6 @@
 extends StaticBody3D
 ## First milestone: walkable smooth planet. Mesh is NOT YET editable voxel terrain.
-const RADIUS := 50.0
+const RADIUS := 60.0
 const LAT_SEGMENTS := 96
 const LON_SEGMENTS := 192
 
