@@ -1,17 +1,16 @@
 extends CharacterBody3D
-## First-person walking on a stationary spherical planet.
+## Surface-locked first-person controller: the planet stays stationary.
 @export var speed: float = 5.0
 @export var gravity_strength: float = 22.0
 @export var jump_speed: float = 7.0
 @export var mouse_sensitivity: float = 0.0025
 var pitch: float = 0.0
+var height_above_ground: float = 0.95
 var vertical_speed: float = 0.0
 @onready var camera: Camera3D = $Camera3D
+@onready var planet: Node3D = get_parent().get_node("Planet")
 
 func _ready() -> void:
-    floor_snap_length = 0.5
-    floor_max_angle = deg_to_rad(55.0)
-    motion_mode = CharacterBody3D.MOTION_MODE_GROUNDED
     _align_to_surface()
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -29,29 +28,34 @@ func _align_to_surface() -> void:
     var up: Vector3 = global_position.normalized()
     if up.length_squared() < 0.01:
         return
-    var current_up: Vector3 = global_transform.basis.y.normalized()
-    var rotation_to_up := Quaternion(current_up, up)
+    var rotation_to_up := Quaternion(global_transform.basis.y.normalized(), up)
     global_transform.basis = (Basis(rotation_to_up) * global_transform.basis).orthonormalized()
     up_direction = up
 
 func _physics_process(delta: float) -> void:
+    var up: Vector3 = global_position.normalized()
+    if up.length_squared() < 0.01:
+        return
     _align_to_surface()
-    var up: Vector3 = up_direction
     var forward: Vector3 = -global_transform.basis.z
     forward = (forward - up * forward.dot(up)).normalized()
     var right: Vector3 = global_transform.basis.x
     right = (right - up * right.dot(up)).normalized()
-    var input_axis := Vector2(
+    var axis := Vector2(
         float(Input.is_key_pressed(KEY_D)) - float(Input.is_key_pressed(KEY_A)),
         float(Input.is_key_pressed(KEY_W)) - float(Input.is_key_pressed(KEY_S))
     ).normalized()
-    var tangent_velocity: Vector3 = (right * input_axis.x + forward * input_axis.y) * speed
-    if is_on_floor():
+    var tangent: Vector3 = (right * axis.x + forward * axis.y) * speed
+    # Move the character around the planet, not the planet underneath it.
+    var next_position: Vector3 = global_position + tangent * delta
+    var next_up: Vector3 = next_position.normalized()
+    var ground_radius: float = planet.surface_radius(next_up)
+    var standing_radius: float = ground_radius + 0.95
+    if Input.is_key_pressed(KEY_SPACE) and height_above_ground <= 0.951 and vertical_speed <= 0.0:
+        vertical_speed = jump_speed
+    vertical_speed -= gravity_strength * delta
+    height_above_ground = maxf(0.95, height_above_ground + vertical_speed * delta)
+    if height_above_ground <= 0.95 and vertical_speed < 0.0:
         vertical_speed = 0.0
-        if Input.is_key_pressed(KEY_SPACE):
-            vertical_speed = jump_speed
-    else:
-        vertical_speed -= gravity_strength * delta
-    velocity = tangent_velocity + up * vertical_speed
-    move_and_slide()
-    vertical_speed = velocity.dot(up_direction)
+    global_position = next_up * (standing_radius + height_above_ground - 0.95)
+    _align_to_surface()
