@@ -1,6 +1,6 @@
 extends CanvasLayer
 ## Spherical navigation HUD: +Y north, +X longitude zero, planet centered at origin.
-@export var planet_radius: float = 250.0
+@export var planet_radius: float = 60.0
 @onready var player: Node3D = get_parent().get_node("Player")
 var label: Label
 
