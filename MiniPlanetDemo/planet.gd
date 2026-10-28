@@ -1,6 +1,6 @@
 extends StaticBody3D
 ## First milestone: walkable smooth planet. Mesh is NOT YET editable voxel terrain.
-const RADIUS := 250.0
+const RADIUS := 50.0
 const LAT_SEGMENTS := 96
 const LON_SEGMENTS := 192
 
@@ -17,7 +17,7 @@ func _ready() -> void:
     _build_planet()
 
 func _height(dir: Vector3) -> float:
-    return RADIUS + terrain_noise.get_noise_3dv(dir * RADIUS) * 6.0 + detail_noise.get_noise_3dv(dir * RADIUS) * 0.9
+    return RADIUS + terrain_noise.get_noise_3dv(dir * RADIUS) * 1.8 + detail_noise.get_noise_3dv(dir * RADIUS) * 0.3
 
 func _color(dir: Vector3, elevation: float) -> Color:
     var latitude := absf(dir.y)
@@ -27,8 +27,8 @@ func _color(dir: Vector3, elevation: float) -> Color:
         return Color(0.58, 0.65, 0.52).lerp(Color(0.87, 0.93, 0.96), (latitude - 0.67) / 0.09)
     var biome := terrain_noise.get_noise_3dv(dir * RADIUS * 0.45)
     if biome > 0.05:
-        return Color(0.60, 0.52, 0.32).lerp(Color(0.72, 0.65, 0.43), clampf(elevation / 6.0, 0.0, 1.0))
-    return Color(0.22, 0.46, 0.18).lerp(Color(0.37, 0.52, 0.22), clampf(elevation / 6.0, 0.0, 1.0))
+        return Color(0.60, 0.52, 0.32).lerp(Color(0.72, 0.65, 0.43), clampf(elevation / 1.8, 0.0, 1.0))
+    return Color(0.22, 0.46, 0.18).lerp(Color(0.37, 0.52, 0.22), clampf(elevation / 1.8, 0.0, 1.0))
 
 func _point(lat: int, lon: int) -> Vector3:
     var phi := PI * float(lat) / float(LAT_SEGMENTS)
