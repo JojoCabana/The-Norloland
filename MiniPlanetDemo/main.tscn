@@ -1,7 +1,11 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://planet.gd" id="1"]
 [ext_resource type="Script" path="res://player.gd" id="2"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
+radius = 0.4
+height = 1.8
 
 [node name="MiniPlanetDemo" type="Node3D"]
 
@@ -22,7 +26,3 @@ current = true
 [node name="Sun" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-45, -30, 0)
 light_energy = 1.5
-
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
-radius = 0.4
-height = 1.8
