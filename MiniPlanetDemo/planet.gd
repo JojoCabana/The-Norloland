@@ -61,7 +61,7 @@ func _build_planet() -> void:
     add_child(collision)
 
 func _triangle(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
-    for p in [a, b, c]:
-        var dir := p.normalized()
+    for p: Vector3 in [a, b, c]:
+        var dir: Vector3 = p.normalized()
         st.set_color(_color(dir, p.length() - RADIUS))
         st.add_vertex(p)
