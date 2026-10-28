@@ -10,16 +10,51 @@ const FEET_OFFSET: float = 0.95
 var pitch: float = 0.0
 var jump_height: float = 0.0
 var vertical_speed: float = 0.0
+var third_person: bool = true
+var chase_camera: Camera3D
+var marker: MeshInstance3D
 @onready var camera: Camera3D = $Camera3D
 @onready var planet: Node3D = get_parent().get_node("Planet")
 
 func _ready() -> void:
     _align_to_planet()
     _snap_to_surface()
+    chase_camera = Camera3D.new()
+    chase_camera.name = "ChaseCamera"
+    chase_camera.fov = 75.0
+    get_parent().add_child(chase_camera)
+    marker = MeshInstance3D.new()
+    marker.name = "PlayerMarker"
+    var body_mesh := CapsuleMesh.new()
+    body_mesh.radius = 0.4
+    body_mesh.height = 1.8
+    marker.mesh = body_mesh
+    var body_material := StandardMaterial3D.new()
+    body_material.albedo_color = Color(1.0, 0.25, 0.1)
+    marker.material_override = body_material
+    add_child(marker)
+    _update_camera()
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
+func _update_camera() -> void:
+    if third_person:
+        camera.current = false
+        chase_camera.current = true
+        marker.visible = true
+        var up: Vector3 = global_position.normalized()
+        var back: Vector3 = global_transform.basis.z.normalized()
+        chase_camera.global_position = global_position + up * 3.0 + back * 9.0
+        chase_camera.look_at(global_position + up * 0.5, up)
+    else:
+        chase_camera.current = false
+        camera.current = true
+        marker.visible = false
+
 func _unhandled_input(event: InputEvent) -> void:
-    if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+    if event is InputEventKey and event.pressed and event.keycode == KEY_F5:
+        third_person = not third_person
+        _update_camera()
+    elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
         Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
     elif event is InputEventMouseButton and event.pressed:
         Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -63,3 +98,4 @@ func _physics_process(delta: float) -> void:
         vertical_speed = 0.0
     _snap_to_surface()
     _align_to_planet()
+    _update_camera()
